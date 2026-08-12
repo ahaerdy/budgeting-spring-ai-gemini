@@ -20,6 +20,13 @@ repositories {
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter'
+
+    // BOM do Spring AI — centraliza as versões de todos os módulos do Spring AI entre si
+    implementation platform("org.springframework.ai:spring-ai-bom:2.0.0")
+
+    // Starter do Google Gemini — usado neste projeto
+    implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'
+
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
