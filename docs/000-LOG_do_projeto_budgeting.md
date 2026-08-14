@@ -172,8 +172,101 @@ Process finished with exit code 0
 | `application.properties` com `spring.ai.google.genai.api-key` (prefixo correto) | ✅ |
 | `BudgetingApplicationTests.contextLoads()` | pendente de execução explícita |
 
-- Arquivos: [001-budgeting-spring-ai-gemini_passos_01e02.zip](../etapas_do_projeto/001-budgeting-spring-ai-gemini_passos_01e02.zip)
-
 **Próximo passo planejado:** Parte 3 do tutorial (Vídeo 03) — adicionar `spring-boot-starter-web`, configurar `spring.ai.google.genai.chat.options.model` e `temperature`, criar o teste de integração `GeminiChatModelIT` e o `ChatModelController` com o endpoint `GET /api/chat-model`.
+
+---
+
+## 📝 LOG DE EXECUÇÃO — DIA 02
+
+**Data:** 14/08/2026
+**Contexto:** Continuação a partir do checkpoint da Parte 1/2 (fechado no DIA 01). Foco de hoje: Parte 3 do tutorial (Vídeo 03) — primeira integração real de chat com o Gemini, testada e exposta via HTTP.
+
+---
+
+## 4. 🔌 Parte 3 do Tutorial — ChatModel: a primeira chamada a uma LLM (Vídeo 03)
+
+Objetivo desta etapa: validar a integração com o Gemini através de um teste de integração, e só depois expor essa integração como um endpoint HTTP simples.
+
+### 4.1. Arquivos alterados/criados
+
+**`budgeting/build.gradle`** — adicionada a dependência `spring-boot-starter-web`, necessária para o suporte HTTP/REST (servidor Tomcat embutido, anotações de controller, Jackson):
+
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    implementation platform("org.springframework.ai:spring-ai-bom:2.0.0")
+
+    //  implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+    implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+```
+
+**`budgeting/src/main/resources/application.properties`** — adicionadas três propriedades: modelo padrão do Gemini, temperatura global, e nível de log do Spring AI:
+
+```properties
+spring.application.name=budgeting
+#spring.ai.openai.api-key=${OPENAI_API_KEY}
+spring.ai.google.genai.api-key=${GEMINI_API_KEY}
+spring.ai.google.genai.chat.options.model=gemini-3-flash-preview
+spring.ai.google.genai.chat.options.temperature=0.0
+logging.level.org.springframework.ai=DEBUG
+```
+
+**`budgeting/src/test/java/dio/budgeting/GeminiChatModelIT.java`** (novo) — teste de integração usando `GoogleGenAiChatModel` diretamente, com opções sobrescritas por chamada (`temperature=1.0`, `responseMimeType=text/plain`).
+
+**`budgeting/src/main/java/dio/budgeting/ChatModelController.java`** (novo) — endpoint `GET /api/chat-model`, injetando `GoogleGenAiChatModel` via construtor.
+
+### 4.2. Incidente 1 — variável de ambiente não visível no terminal usado para `./gradlew test`
+
+Ao rodar `./gradlew test` pela primeira vez pelo terminal, o resultado foi `BUILD SUCCESSFUL` — mas isso, isoladamente, **não confirmou** que `GeminiChatModelIT` de fato executou: como o teste está anotado com `@EnabledIfEnvironmentVariable(named = "GEMINI_API_KEY", matches = ".+")`, ele também produziria `BUILD SUCCESSFUL` caso fosse **pulado** por falta da variável — o Gradle não distingue visualmente, no resumo padrão, "passou" de "foi pulado".
+
+**Causa identificada:** a variável `GEMINI_API_KEY` só havia sido configurada na *Run Configuration* do IntelliJ (Parte 1), não no terminal usado para rodar `./gradlew test` — são ambientes de variáveis independentes.
+
+**Resolução:** configurada a variável também no terminal/ambiente relevante. Nova execução do teste confirmou, pela primeira vez, a saída real do `System.out.println` do teste (`Gemini response: ...`, uma tabela markdown de exemplo de gastos gerada pelo Gemini) — confirmando que o teste **de fato rodou e passou** (`assertThat(...).isNotEmpty()` satisfeito).
+
+**Lição registrada:** `BUILD SUCCESSFUL` sozinho não é suficiente para confirmar que um teste anotado com `@EnabledIfEnvironmentVariable` realmente executou — é preciso ou inspecionar a saída de console do próprio teste, ou rodá-lo pela IDE (que mostra visualmente "passou"/"pulado"/"falhou"), ou usar `./gradlew test --info`, ou checar o relatório HTML em `build/reports/tests/test/index.html`.
+
+**Nota lateral:** apareceu, junto do resultado, um aviso do Mockito sobre auto-anexação de agente Java (`Mockito is currently self-attaching...`) — confirmado como aviso de compatibilidade futura da própria biblioteca (trazida transitivamente pelo `spring-boot-starter-test`), sem relação com o código do projeto e sem ação necessária.
+
+### 4.3. Incidente 2 — `API key not valid` ao testar o endpoint HTTP
+
+Após criar `ChatModelController` e rodar `BudgetingApplication`, a requisição `GET /api/chat-model?prompt=Oi` devolveu:
+
+```json
+{"timestamp":"2026-08-14T12:15:43.177Z","status":500,"error":"Internal Server Error","path":"/api/chat-model"}
+```
+
+O log da aplicação revelou a causa raiz, no *stack trace*:
+
+```
+com.google.genai.errors.ClientException: 400 . API key not valid. Please pass a valid API key.
+```
+
+**Causa identificada:** mesma raiz do Incidente 1, mas em outra frente — a *Run Configuration* do IntelliJ usada para `BudgetingApplication` (tipo "Application") não tinha `GEMINI_API_KEY` configurada, ou a chave estava incorreta. Cada *Run Configuration* do IntelliJ mantém seu próprio conjunto de variáveis de ambiente, independente das demais (inclusive da configuração usada para `GeminiChatModelIT`, tipo "JUnit").
+
+**Resolução:** corrigida a configuração da chave `GEMINI_API_KEY` na *Run Configuration* de `BudgetingApplication`. Nova execução confirmou o endpoint respondendo corretamente:
+
+```bash
+curl -X GET "http://localhost:8080/api/chat-model?prompt=Oi"
+Olá! Tudo bem? Como posso te ajudar hoje?
+```
+
+**Lição registrada:** variáveis de ambiente configuradas no IntelliJ não são compartilhadas automaticamente entre *Run Configurations* diferentes (uma de teste, outra de aplicação), mesmo dentro do mesmo projeto — é preciso configurar cada uma individualmente, ou usar um mecanismo centralizado (como um arquivo `.env` lido por um plugin, algo a considerar como possível melhoria futura de conveniência, não estritamente necessária para o projeto funcionar).
+
+### 4.4. ✅ Checkpoint da Parte 3 — fechado
+
+| Item | Status |
+| --- | --- |
+| `build.gradle` — `spring-boot-starter-web` adicionado | ✅ |
+| `application.properties` — modelo/temperatura/log configurados | ✅ |
+| `GeminiChatModelIT` — criado, rodado e passando | ✅ |
+| `ChatModelController` — criado, endpoint `GET /api/chat-model` respondendo corretamente | ✅ |
+
+**Próximo passo planejado:** Parte 4 do tutorial (Vídeo 04) — trocar o `ChatModel` de baixo nível pelo `ChatClient` fluente: criar `GeminiChatClientIT.java` (teste) e `ChatClientController.java` (endpoint `GET /api/chat`), ambos sem exigir nenhuma dependência ou propriedade nova.
 
 ---
