@@ -621,7 +621,7 @@ Deve devolver uma resposta de texto, como *"Oi! Como posso ajudar você hoje?"*.
 
 ### Recapitulando
 
-Até aqui, o projeto conversa com o Gemini usando diretamente o `ChatModel` — uma interface de baixo nível, específica de provedor, com um método `call(...)` simples. Vamos agora conhecer o `ChatClient`, uma API construída em cima dele.
+Até aqui, o projeto conversa com o Gemini usando diretamente o `ChatModel` — uma interface de baixo nível, cujo uso completo (além do atalho `call(String)`) exige recorrer a classes específicas do provedor escolhido, com um método `call(...)` simples. Vamos agora conhecer o `ChatClient`, uma API construída em cima dele.
 
 ### Objetivo
 
@@ -647,6 +647,22 @@ O `ChatClient` **não substitui** a auto-configuração vista na Parte 3 — ele
   - e, como veremos na Parte 5, **ferramentas** (*tools*) que o modelo pode decidir chamar.
 
 > **Prompt de sistema × prompt de usuário, explicado do zero.** Tudo o que a pessoa usando a aplicação digita ou fala é um **prompt de usuário**. Um **prompt de sistema**, por outro lado, é definido pelo *desenvolvedor* (não pelo usuário final), dando contexto ao modelo sobre quem ele deve "ser" e o que se espera que ele faça — por exemplo, "você é um assistente financeiro" (frase que reaparecerá, quase literalmente, na Parte 11). Na prática, é uma forma de configurar o comportamento do modelo **antes mesmo** de qualquer mensagem do usuário chegar.
+
+> **Onde a informação do provedor (Gemini) realmente mora, já que o `ChatClientController` nunca a menciona diretamente?** Vale deixar isso rastreável, em vez de tratar como "mágica". A informação não desaparece — ela só migra para fora da classe, em três lugares que você já viu:
+> 1. **`build.gradle` (Parte 1.6)** — a linha `implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'` é a decisão "vamos falar com o Gemini". Trocando essa linha por outro *starter*, o provedor mudaria, sem alterar uma linha sequer do controller.
+> 2. **`application.properties` (Partes 1.7 e 3.3)** — a chave de API, o modelo padrão e a temperatura, todos fora do código Java.
+> 3. **A auto-configuração, dentro do `.jar` do próprio *starter*** — código já compilado (visível como `spring-ai-autoconfigure-model-google-genai-2.0.0.jar` no seu classpath desde a Parte 1.8) que lê os dois pontos acima e efetivamente monta o `GoogleGenAiChatModel`, na inicialização da aplicação, sem você chamar nada explicitamente.
+>
+> O `ChatClient.Builder` (seção 4.3) é entregue já embrulhando esse `GoogleGenAiChatModel` pronto — por isso `ChatClientController` consegue ficar **desacoplado**: dependente apenas da interface genérica `ChatClient`, nunca de uma classe específica do Gemini. Esse é o mesmo princípio de design que reaparece, de forma ainda mais explícita, na Parte 8, quando `TransactionRepository` esconde de `PersistTransactionUseCase` qual banco de dados está por trás.
+
+> **Sobre o sufixo `Controller` no nome da classe, explicado do zero — e um padrão que vai se repetir no projeto inteiro.** `Controller` não é uma palavra gerada pela anotação `@RestController` — é uma **convenção de nomenclatura** adotada por quem escreve o código, para sinalizar visualmente o **papel** que a classe desempenha. A anotação é quem, tecnicamente, habilita esse comportamento; o nome do arquivo, por si só, não tem nenhum efeito sobre o que o Spring faz — você poderia chamar a classe de qualquer outro nome, anotá-la com `@RestController`, e ela funcionaria exatamente igual.
+>
+> O termo vem de um padrão de arquitetura mais antigo, o **MVC** (*Model-View-Controller*), em que o "Controller" é a peça responsável por **receber uma entrada** (aqui, uma requisição HTTP) e **coordenar** o que deve acontecer a partir dela. Esse mesmo padrão de nomenclatura-por-papel reaparece, com sufixos diferentes, em outras classes que você ainda vai criar:
+> - `Service` (por exemplo, `TextToSpeechService`, Parte 7) — papel de lógica de negócio/orquestração, habilitado pela anotação `@Service`.
+> - `Repository` (por exemplo, `JpaTransactionRepository`, Parte 9) — papel de acesso a dados, habilitado pela anotação `@Repository`.
+> - `Config` (por exemplo, `UseCaseConfig`, Parte 10) — papel de configuração explícita de *beans*, habilitado pela anotação `@Configuration`.
+>
+> Em todos os casos, o nome é decoração legível para quem lê o projeto; a anotação é o que de fato instrui o Spring sobre o comportamento real da classe.
 
 ### 4.2. Passo 1 — Criar o teste `GeminiChatClientIT`
 
@@ -800,18 +816,21 @@ Confirmado: `ChatClientController.java` existe com o endpoint `GET /api/chat`, i
 
 ### Recapitulando
 
-Na Parte 4, vimos que o `ChatClient` conseguia "resolver" uma soma simples, mas apenas prevendo estatisticamente qual seria o resultado — sem executar nenhuma operação matemática real. Vamos agora corrigir isso com Tool Calling, o conceito mais importante de todo o projeto, já que é ele que permite ao assistente **agir de verdade** sobre o sistema (salvar e consultar transações), e não apenas conversar.
+Na Parte 4, vimos que o `ChatClient` conseguia "resolver" uma soma simples (`10 + 20 = 30`), mas apenas prevendo estatisticamente qual seria o resultado — sem executar nenhuma operação matemática real. Vamos agora corrigir isso com Tool Calling, o conceito mais importante de todo o projeto, já que é ele que permite ao assistente **agir de verdade** sobre o sistema (salvar e consultar transações), e não apenas conversar.
 
 ### Objetivo
 
 Substituir a "matemática de cabeça" do modelo por chamadas reais a métodos Java, introduzindo o padrão de Tool Calling em um exemplo simples e controlado, antes de aplicá-lo aos casos de uso reais do domínio (o que só acontece na Parte 8 em diante).
 
-> **📁 Arquivos desta etapa:**
-> 1. **Criar** `src/test/java/dio/budgeting/ToolCallingIT.java` — único arquivo desta etapa (seção 5.4), contendo a classe interna `MathTools`.
->
-> Não existe nenhum arquivo de produção nesta Parte — é intencionalmente **só um teste**, um "laboratório" isolado para aprender o mecanismo de Tool Calling antes de aplicá-lo a algo real. Nenhuma dependência nova é necessária (o suporte a `@Tool` já veio, de forma transitiva, junto do starter do Gemini, desde a Parte 1).
+### Visão geral desta etapa — 1 único passo
 
-### 5.1. Tool Calling (Function Calling), explicado do zero, passo a passo
+| Passo | Ação | Arquivo |
+|---|---|---|
+| 1 | Criar o teste de integração (com a *tool* de exemplo embutida) | `budgeting/src/test/java/dio/budgeting/ToolCallingIT.java` |
+
+Esta é a Parte mais curta do tutorial em número de arquivos — de propósito. Não existe nenhum arquivo de produção aqui, nem dependência nova no `build.gradle` (o suporte a `@Tool` já veio, de forma transitiva, junto do starter do Gemini, desde a Parte 1). É, intencionalmente, um "laboratório" isolado só para você aprender o mecanismo antes de aplicá-lo a algo real, na Parte 8.
+
+### 5.1. Tool Calling (Function Calling), explicado do zero, passo a passo (leitura, antes do código)
 
 **Tool Calling** — também chamado de *Function Calling* na documentação de vários provedores — é um recurso em que um LLM, ao processar um prompt, pode decidir que a melhor forma de responder não é gerar texto diretamente, mas **solicitar a execução de uma função/método específico**, previamente disponibilizado pela aplicação, com argumentos que o próprio modelo extrai do contexto da conversa.
 
@@ -819,37 +838,28 @@ O fluxo completo, passo a passo:
 
 1. **Declaração:** a aplicação informa ao modelo, junto com o prompt, quais *tools* (ferramentas) estão disponíveis — cada uma identificada por um **nome**, uma **descrição** (em linguagem natural, explicando o que a ferramenta faz e quando usá-la) e uma **assinatura de parâmetros** (quais argumentos ela espera, e de que tipo).
 2. **Decisão do modelo:** o modelo recebe o prompt do usuário e, sozinho, decide se alguma das *tools* disponíveis deveria ser chamada para responder adequadamente — e, se sim, **com quais argumentos**, extraídos do contexto da conversa.
-3. **Execução real:** este é o ponto mais importante de entender — **o modelo não executa nada por conta própria**. Ele apenas *solicita* a chamada (essa solicitação é, na prática, apenas mais uma estrutura de dados na resposta da API, dizendo "eu gostaria que a ferramenta X fosse chamada com estes argumentos"). É a **aplicação** — no nosso caso, o Spring AI, atuando por trás do `ChatClient` — quem efetivamente localiza o método Java correspondente e o invoca de verdade.
-4. **Retorno e continuação:** o resultado dessa execução real volta para o modelo como uma nova mensagem, inserida automaticamente no histórico da conversa (uma `ToolResponseMessage`, mencionada brevemente na Parte 3.2 como um dos tipos de `Message` existentes). O modelo então usa esse resultado — que é um dado real e exato, não mais uma previsão estatística — para formular a resposta final ao usuário.
+3. **Execução real:** este é o ponto mais importante de entender — **o modelo não executa nada por conta própria**. Ele apenas *solicita* a chamada. É a **aplicação** — no nosso caso, o Spring AI, atuando por trás do `ChatClient` — quem efetivamente localiza o método Java correspondente e o invoca de verdade.
+4. **Retorno e continuação:** o resultado dessa execução real volta para o modelo como uma nova mensagem, inserida automaticamente no histórico da conversa. O modelo então usa esse resultado — um dado real e exato, não mais uma previsão estatística — para formular a resposta final ao usuário.
 
 > **Por que isso resolve o problema visto na Parte 4?** Porque, em vez do modelo "adivinhar" o resultado de `10 + 20 − 30` com base em padrões de texto que viu durante o treinamento, ele passa a **delegar** o cálculo para um método Java real, que executa a operação matematicamente exata — e é esse valor exato, e não uma previsão, que retorna ao modelo para compor a resposta.
 
-Os dois grandes casos de uso do Tool Calling, segundo a própria documentação do Spring AI, resumem bem por que este recurso existe: **Information Retrieval** ("busca de informação" — obter dados que o modelo não tem e não poderia saber, como o conteúdo atual de um banco de dados) e **Taking Action** ("realizar uma ação" — executar um efeito real no sistema, como salvar um novo registro). No projeto `budgeting`, ambos os casos aparecem: `ListTransactionsByCategoryUseCase` (Parte 10) é *Information Retrieval*; `PersistTransactionUseCase` (Parte 8) é *Taking Action*.
+Os dois grandes casos de uso do Tool Calling, segundo a própria documentação do Spring AI: **Information Retrieval** ("busca de informação" — obter dados que o modelo não tem, como o conteúdo atual de um banco de dados) e **Taking Action** ("realizar uma ação" — executar um efeito real no sistema, como salvar um novo registro). No projeto `budgeting`, ambos aparecem mais adiante: `ListTransactionsByCategoryUseCase` (Parte 10) é *Information Retrieval*; `PersistTransactionUseCase` (Parte 8) é *Taking Action*.
 
-### 5.2. A anotação `@Tool`, explicada do zero
+### 5.2. A anotação `@Tool`, explicada do zero (leitura, antes do código)
 
 Uma *tool* é declarada simplesmente anotando um método Java comum com `@Tool`:
 
 ```java
-static class MathTools {
-    @Tool(description = "soma dois números inteiros, a e b")
-    public int sum(int a, int b) {
-        return a + b;
-    }
-
-    @Tool(description = "subtrai dois números inteiros, a e b")
-    public int diff(int a, int b) {
-        return a - b;
-    }
+@Tool(description = "soma dois números inteiros, a e b")
+public int sum(int a, int b) {
+    return a + b;
 }
 ```
 
-- **`@Tool(description = "...")`** — a anotação, do pacote `org.springframework.ai.tool.annotation`, que transforma um método Java comum em uma ferramenta disponível ao modelo. O atributo **`description`** é, sem exagero, o elemento mais importante desta anotação: é o único texto que o modelo tem disponível para decidir **quando** e **por que** essa ferramenta deveria ser chamada. Quanto mais clara, específica e sem ambiguidade for essa descrição, melhor o modelo acerta a decisão de uso — ela funciona como uma "bula", escrita para a IA interpretar, não como um comentário de código para outro desenvolvedor humano ler.
-- **Descoberta automática de parâmetros, via reflexão.** Repare que **não foi preciso** escrever manualmente, em nenhum lugar, "o parâmetro `a` é um inteiro chamado `a`". O Spring AI usa **reflexão** — a capacidade que a própria linguagem Java tem de examinar, em tempo de execução, a estrutura de uma classe (seus métodos, parâmetros, tipos) — para descobrir automaticamente o nome de cada parâmetro (`a`, `b`) e seu tipo (`int`), e a partir disso monta, sozinho, um **esquema** (uma descrição estruturada, no formato JSON Schema) que é enviado ao modelo junto da `description`, informando exatamente quais argumentos a ferramenta espera.
+- **`@Tool(description = "...")`** — a anotação, do pacote `org.springframework.ai.tool.annotation`, que transforma um método Java comum em uma ferramenta disponível ao modelo. O atributo **`description`** é o elemento mais importante desta anotação: é o único texto que o modelo tem disponível para decidir **quando** e **por que** essa ferramenta deveria ser chamada. Ela funciona como uma "bula", escrita para a IA interpretar, não como um comentário de código para outro desenvolvedor humano ler.
+- **Descoberta automática de parâmetros, via reflexão.** Repare que **não é preciso** escrever manualmente, em nenhum lugar, "o parâmetro `a` é um inteiro chamado `a`". O Spring AI usa **reflexão** (a capacidade da linguagem Java de examinar, em tempo de execução, a estrutura de uma classe — seus métodos, parâmetros, tipos) para descobrir automaticamente o nome de cada parâmetro e seu tipo, e a partir disso monta, sozinho, um **esquema** enviado ao modelo junto da `description`.
 
-  > **O que é reflexão em Java, explicado do zero?** Normalmente, quando você escreve código Java, você sabe de antemão quais classes, métodos e campos vai usar — essa informação está fixa no próprio código-fonte. **Reflexão** é a capacidade da linguagem de **inspecionar essa estrutura em tempo de execução**, de forma dinâmica: por exemplo, dado um objeto qualquer, é possível perguntar "quais métodos esta classe tem?", "quais parâmetros este método específico espera, e de que tipos?", sem que essas perguntas tenham sido "programadas" com antecedência para aquela classe exata. É exatamente esse mecanismo que permite ao Spring AI (e a outras partes do próprio Spring, de forma geral) examinar qualquer classe anotada e gerar automaticamente metadados sobre ela, sem exigir configuração manual repetitiva.
-
-### 5.3. Registrando as tools no `ChatClient`: `.defaultTools(...)`
+### 5.3. Registrando as tools no `ChatClient`: `.defaultTools(...)` (leitura, antes do código)
 
 ```java
 var chatClient = ChatClient.builder(chatModel)
@@ -858,9 +868,13 @@ var chatClient = ChatClient.builder(chatModel)
         .build();
 ```
 
-- **`.defaultTools(new MathTools())`** — registra uma **instância** da classe de ferramentas (`new MathTools()` — criando um objeto novo dessa classe, na hora) como disponível para todas as chamadas feitas a partir deste `ChatClient` específico. É importante registrar corretamente onde essa chamada acontece: o registro precisa ser feito no momento da **construção** do `ChatClient` (encadeado junto de `.build()`), via `.defaultTools(...)` — registrar uma *tool* apenas em uma chamada específica de `.prompt(...)` (em vez de no *builder*) não garante o mesmo comportamento consistente ao longo da vida útil daquele `ChatClient`.
+- **`.defaultTools(new MathTools())`** — registra uma **instância** da classe de ferramentas (criada com `new MathTools()`) como disponível para todas as chamadas feitas a partir deste `ChatClient` específico. O registro precisa ser feito no momento da **construção** do `ChatClient` (encadeado junto de `.build()`), via `.defaultTools(...)` — e não apenas em uma chamada específica de `.prompt(...)`.
 
-### 5.4. Teste de integração: `ToolCallingIT`, explicado linha por linha
+### 5.4. Passo 1 — Criar o teste `ToolCallingIT`
+
+**📁 Arquivo (novo):** `budgeting/src/test/java/dio/budgeting/ToolCallingIT.java`
+
+**O que fazer:** crie este arquivo, dentro de `src/test/...`, com este conteúdo completo (repare que a classe `MathTools`, com as duas *tools* de exemplo, vive **dentro** deste mesmo arquivo, como uma classe interna):
 
 ```java
 package dio.budgeting;
@@ -911,21 +925,29 @@ public class ToolCallingIT {
 }
 ```
 
-- **`static class MathTools { ... }`** — uma **classe interna estática** (*static nested class*), declarada dentro da própria classe de teste `ToolCallingIT`. A palavra-chave `static` aqui significa que essa classe interna **não precisa** de uma instância de `ToolCallingIT` para existir — ela pode ser instanciada diretamente com `new MathTools()`, independentemente de qualquer teste específico. Ela existe apenas para agrupar, localmente, as duas ferramentas de exemplo usadas neste teste — na Parte 8, veremos que as ferramentas "de verdade" do projeto (`PersistTransactionUseCase`, `ListTransactionsByCategoryUseCase`) não são classes internas de teste, mas classes de primeira classe do próprio pacote `application`.
+**✅ Este é o arquivo completo.**
 
-Todo o restante deste teste é **estruturalmente idêntico** ao `GeminiChatClientIT` da Parte 4.3 (mesmo prompt, mesma asserção `.contains("0")`, mesmo padrão de `@SpringBootTest` + `@EnabledIfEnvironmentVariable`) — a única diferença de código é a linha `.defaultTools(new MathTools())` adicionada à construção do `ChatClient`.
+Explicando as partes que **não** apareceram ainda nas Partes 3 e 4:
 
-**Ponto crucial: essa diferença não é visível "olhando o resultado".** O texto final devolvido pelo modelo pode até ser idêntico ao do teste da Parte 4 (`"0"`, ou uma frase contendo `"0"`) — a diferença real está no **comportamento interno**: em vez do modelo "adivinhar" a soma e a subtração a partir de padrões estatísticos de linguagem, ele agora **delega** ambas as operações para os métodos reais `sum` e `diff`, que executam a aritmética de forma exata em Java.
+- **`static class MathTools { ... }`** — uma **classe interna estática** (*static nested class*), declarada dentro da própria classe de teste `ToolCallingIT`. A palavra-chave `static` aqui significa que essa classe interna **não precisa** de uma instância de `ToolCallingIT` para existir — ela pode ser instanciada diretamente com `new MathTools()`, independentemente de qualquer teste específico. Ela existe apenas para agrupar, localmente, as duas ferramentas de exemplo usadas neste teste — na Parte 8, você vai ver que as ferramentas "de verdade" do projeto (`PersistTransactionUseCase`, `ListTransactionsByCategoryUseCase`) não são classes internas de teste, mas classes de primeira classe do próprio pacote `application`.
+- **`@Tool(description = "soma dois números inteiros, a e b")` / `@Tool(description = "subtrai dois números inteiros, a e b")`** — como explicado na seção 5.2, cada método anotado vira uma ferramenta que o modelo pode escolher chamar.
+- **`ChatClient.builder(chatModel).defaultSystem("Voce é um matematico").defaultTools(new MathTools()).build()`** — a mesma construção da Parte 4.2 (`ChatClient.builder(chatModel)`, o mesmo `.defaultSystem(...)`), agora com **`.defaultTools(new MathTools())`** adicionado — a única diferença real de código em relação ao teste `GeminiChatClientIT` da Parte 4.
 
-**Como confirmar, de fato, que a tool foi usada — e não o modelo "de cabeça"?** É aqui que a propriedade `logging.level.org.springframework.ai=DEBUG`, configurada lá na Parte 3.3, se torna útil: com ela ativa, os logs de execução deste teste mostram entradas de classes internas do Spring AI como `DefaultToolCallingManager` e `MethodToolCallback`, evidenciando as chamadas reais aos métodos `sum` e `diff` — inclusive a conversão do valor de retorno de cada um para um formato estruturado (JSON), antes de ser devolvido ao modelo, que então usa esses valores exatos (e não estimados) para compor a resposta final.
+**Ponto crucial: essa diferença de uma linha não é visível "olhando o resultado".** O texto final devolvido pelo modelo pode até ser idêntico ao do teste da Parte 4 (`"0"`, ou uma frase contendo `"0"`) — a diferença real está no **comportamento interno**: em vez do modelo "adivinhar" a soma e a subtração a partir de padrões estatísticos de linguagem, ele agora **delega** ambas as operações para os métodos reais `sum` e `diff`, que executam a aritmética de forma exata em Java.
+
+**Como confirmar, de fato, que a tool foi usada — e não o modelo "de cabeça"?** É aqui que a propriedade `logging.level.org.springframework.ai=DEBUG`, configurada lá na Parte 3.3, se torna útil: com ela ativa, os logs de execução deste teste mostram entradas de classes internas do Spring AI como `DefaultToolCallingManager` e `MethodToolCallback`, evidenciando as chamadas reais aos métodos `sum` e `diff` — inclusive a conversão do valor de retorno de cada um para um formato estruturado (JSON), antes de ser devolvido ao modelo, que então usa esses valores exatos (e não estimados) para compor a resposta final. Se quiser confirmar visualmente, procure por essas classes no console ao rodar o teste.
+
+**Rode este teste agora** — não há Passo 2 nesta Parte.
 
 ### 5.5. Checkpoint da Parte 5
 
-Confirmado no `.zip`: `ToolCallingIT.java` existe em `dio.budgeting`, com a classe interna `MathTools` (contendo os métodos `sum` e `diff`, anotados com `@Tool`) e o método de teste `should_executeSum_when_prompted`, usando `GoogleGenAiChatModel` e `.defaultTools(...)`.
+| Arquivo | Ação nesta Parte |
+|---|---|
+| `budgeting/src/test/java/dio/budgeting/ToolCallingIT.java` | **Criado** |
+
+Confirmado: `ToolCallingIT.java` existe em `dio.budgeting`, com a classe interna `MathTools` (contendo os métodos `sum` e `diff`, anotados com `@Tool`) e o método de teste `should_executeSum_when_prompted`, usando `GoogleGenAiChatModel` e `.defaultTools(...)`.
 
 **Recapitulando:** este teste é, propositalmente, um "protótipo conceitual" simples e didático — soma e subtração de inteiros, sem nenhuma relação direta com o domínio de negócio do projeto (transações financeiras). É exatamente esse mesmo padrão — um método anotado com `@Tool`, registrado via `.defaultTools(...)` — que será aplicado, a partir da Parte 8, aos casos de uso **reais** do domínio: `PersistTransactionUseCase.execute(...)` e `ListTransactionsByCategoryUseCase.execute(...)`. Se o padrão desta Parte 5 ficou claro, o Tool Calling "de verdade" nas próximas partes será apenas uma aplicação do mesmo mecanismo a um problema mais interessante.
-
-
 ---
 
 ## Parte 6 — Transcrevendo áudio em texto: o primeiro ponto sem equivalente Gemini (Vídeo 06)

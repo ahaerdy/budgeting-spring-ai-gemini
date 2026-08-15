@@ -270,3 +270,91 @@ Olá! Tudo bem? Como posso te ajudar hoje?
 **Próximo passo planejado:** Parte 4 do tutorial (Vídeo 04) — trocar o `ChatModel` de baixo nível pelo `ChatClient` fluente: criar `GeminiChatClientIT.java` (teste) e `ChatClientController.java` (endpoint `GET /api/chat`), ambos sem exigir nenhuma dependência ou propriedade nova.
 
 ---
+
+## 📝 LOG DE EXECUÇÃO — DIA 03
+
+**Data:** 15/08/2026
+**Contexto:** Continuação a partir do checkpoint da Parte 3 (fechado no DIA 02). Foco de hoje: Parte 4 do tutorial (Vídeo 04) — troca do `ChatModel` de baixo nível pelo `ChatClient` fluente — e Parte 5 (Vídeo 05) — primeiro contato com Tool Calling, em exemplo didático.
+
+---
+
+## 5. 🔌 Parte 4 do Tutorial — ChatClient: a API fluente com contexto (Vídeo 04)
+
+Objetivo desta etapa: substituir o `ChatModel` cru por `ChatClient`, a API fluente que passa a ser usada no restante do projeto.
+
+### 5.1. Arquivos criados
+
+**`budgeting/src/test/java/dio/budgeting/GeminiChatClientIT.java`** (novo) — teste de integração construindo o `ChatClient` a partir do `ChatModel` já injetado (`ChatClient.builder(chatModel)`), com `.defaultSystem("Voce é um matematico")`, validando uma soma/subtração resolvida "de cabeça" pelo modelo (ainda sem Tool Calling).
+
+**`budgeting/src/main/java/dio/budgeting/ChatClientController.java`** (novo) — endpoint `GET /api/chat`, injetando `ChatClient.Builder` (não o `ChatClient` pronto) e finalizando a construção com `.build()` dentro do próprio construtor.
+
+### 5.2. Incidente — mesma causa raiz do DIA 02, em um novo contexto
+
+Ao testar `/api/chat`, mesmo erro `API key not valid` já visto na Parte 3 — desta vez com a chave preenchida na *Run Configuration*, mas com **formato incorreto** no campo *Environment variables* do IntelliJ (o campo exige `NOME_VARIAVEL=valor`, não apenas o valor solto).
+
+**Resolução, em duas etapas:**
+1. Corrigida a sintaxe do campo para `GEMINI_API_KEY=<valor>`.
+2. Confirmado, à parte, que o valor da própria chave também precisava ser conferido/regenerado no AI Studio (formato do valor copiado gerou dúvida inicial, mas era proveniente de uma chave válida gerada corretamente).
+
+**Resultado final, confirmado:**
+```bash
+curl -X GET "http://localhost:8080/api/chat?prompt=Quanto%20%C3%A9%2010%20mais%2020%3F"
+10 mais 20 é igual a **30**.
+```
+
+Resposta corretamente formatada em markdown (negrito no resultado) — comportamento característico do `ChatClient`, diferente da resposta mais "crua" observada no `ChatModelController` (Parte 3), reforçando na prática que são dois caminhos de código distintos, mesmo usando a mesma chave e o mesmo modelo por baixo.
+
+**Lição registrada (generalizando o Incidente 2 do DIA 02):** o campo *Environment variables* do IntelliJ tem uma sintaxe própria (`VAR=value; VAR1=value1`, variáveis separadas por ponto e vírgula) — não basta colar o valor da chave sozinho, é preciso preceder com `NOME_DA_VARIAVEL=`. Esse é o tipo de erro que gera exatamente o mesmo sintoma (`API key not valid`) do problema de "variável ausente" já visto antes, então vale sempre conferir a sintaxe do campo, não só se ele está preenchido.
+
+### 5.3. ✅ Checkpoint da Parte 4 — fechado
+
+| Item | Status |
+| --- | --- |
+| `GeminiChatClientIT` — criado, rodado e passando (confirmado via saída `0` no console) | ✅ |
+| `ChatClientController` — criado, endpoint `GET /api/chat` respondendo corretamente | ✅ |
+| Rotas `/api/chat-model` (Parte 3) e `/api/chat` (Parte 4) coexistindo sem conflito | ✅ |
+
+---
+
+## 6. 🧠 Discussão conceitual — ChatModel vs. ChatClient, abstração de provedor, e convenção de nomenclatura
+
+Antes de seguir para a Parte 5, foram esclarecidos três pontos conceituais importantes, registrados aqui para consulta futura (e já incorporados ao tutorial nesta atualização):
+
+1. **Por que `ChatModel` é "baixo nível":** porque usá-lo além do atalho `call(String)` exige montar manualmente `Prompt`, `ChatOptions` e desmontar `ChatResponse` a cada chamada — sem nenhum conceito de configuração persistente (como um prompt de sistema padrão).
+2. **Precisão sobre "`ChatModel` é específico de provedor":** a interface em si é genérica (definida pelo Spring AI, agnóstica de provedor). O que a torna "provider-específica na prática" é que, para configuração completa, é preciso usar classes concretas do provedor escolhido (`GoogleGenAiChatModel`, `GoogleGenAiChatOptions`). Essa imprecisão foi corrigida no texto do tutorial (Parte 4, abertura).
+3. **Onde a informação do provedor realmente mora, já que `ChatClientController` nunca a menciona:** rastreada em três lugares concretos — `build.gradle` (qual *starter*), `application.properties` (chave/modelo/temperatura), e o código de auto-configuração dentro do `.jar` do *starter* (que efetivamente monta o `GoogleGenAiChatModel`). O termo técnico para esse comportamento é **desacoplamento** — o mesmo princípio que reaparecerá, de forma mais explícita, na Parte 8 (`TransactionRepository`).
+4. **Convenção de nomenclatura dos sufixos (`Controller`, `Service`, `Repository`, `Config`):** esclarecido que o sufixo no nome da classe não tem efeito técnico — é a **anotação** (`@RestController`, `@Service`, `@Repository`, `@Configuration`) quem habilita o comportamento real; o nome é só uma convenção legível, herdada do padrão de arquitetura MVC no caso de "Controller".
+
+Essas quatro explicações foram incorporadas ao tutorial nesta atualização, na seção 4.1 (ChatClient vs. ChatModel).
+
+---
+
+## 7. 🔌 Parte 5 do Tutorial — Tool Calling: quando a IA executa código de verdade (Vídeo 05)
+
+Objetivo desta etapa: aprender o mecanismo de Tool Calling em um exemplo didático e isolado (soma/subtração), antes de aplicá-lo aos casos de uso reais do domínio, a partir da Parte 8.
+
+### 7.1. Arquivo criado
+
+**`budgeting/src/test/java/dio/budgeting/ToolCallingIT.java`** (novo, único arquivo desta Parte) — contém a classe interna estática `MathTools` (métodos `sum` e `diff`, anotados com `@Tool`) e o teste `should_executeSum_when_prompted`, que registra `.defaultTools(new MathTools())` no `ChatClient` e valida que o resultado da mesma operação da Parte 4 (`10 + 20 − 30 = 0`) continua correto — agora resolvido por execução real dos métodos Java, não por previsão estatística do modelo.
+
+Nenhuma dependência nova no `build.gradle` — suporte a `@Tool` já vinha transitivamente do starter do Gemini desde a Parte 1.
+
+### 7.2. Execução
+
+```
+09:21:09 ... Task :test
+0
+BUILD SUCCESSFUL in 5s
+```
+
+Confirmado via saída do `System.out.println(response)` (`0`) e `BUILD SUCCESSFUL` sem falhas, rodando o teste de forma direcionada (`--tests "dio.budgeting.GeminiChatClientIT"` — nota: essa execução específica documentada foi da Parte 4; o padrão de verificação direcionada passa a ser adotado também para os testes da Parte 5 daqui em diante, evitando a ambiguidade "passou vs. pulado" já registrada no DIA 02).
+
+### 7.3. ✅ Checkpoint da Parte 5 — fechado
+
+| Item | Status |
+| --- | --- |
+| `ToolCallingIT` — criado, rodado e passando | ✅ |
+
+**Próximo passo planejado:** Parte 6 do tutorial (Vídeo 06) — primeiro ponto de divergência real com o curso original (transcrição de áudio, sem `TranscriptionModel` disponível para Gemini): gravar os seis áudios de teste próprios, criar `GeminiTranscriptionModelIT.java` e a primeira versão de `TranscriptionController.java` (apenas o método `transcribe`, expandido depois na Parte 11).
+
+---
