@@ -948,31 +948,33 @@ Explicando as partes que **não** apareceram ainda nas Partes 3 e 4:
 Confirmado: `ToolCallingIT.java` existe em `dio.budgeting`, com a classe interna `MathTools` (contendo os métodos `sum` e `diff`, anotados com `@Tool`) e o método de teste `should_executeSum_when_prompted`, usando `GoogleGenAiChatModel` e `.defaultTools(...)`.
 
 **Recapitulando:** este teste é, propositalmente, um "protótipo conceitual" simples e didático — soma e subtração de inteiros, sem nenhuma relação direta com o domínio de negócio do projeto (transações financeiras). É exatamente esse mesmo padrão — um método anotado com `@Tool`, registrado via `.defaultTools(...)` — que será aplicado, a partir da Parte 8, aos casos de uso **reais** do domínio: `PersistTransactionUseCase.execute(...)` e `ListTransactionsByCategoryUseCase.execute(...)`. Se o padrão desta Parte 5 ficou claro, o Tool Calling "de verdade" nas próximas partes será apenas uma aplicação do mesmo mecanismo a um problema mais interessante.
-
 ---
 
 ## Parte 6 — Transcrevendo áudio em texto: o primeiro ponto sem equivalente Gemini (Vídeo 06)
 
 ### Recapitulando
 
-Já sabemos conversar com o Gemini (`ChatModel`, `ChatClient`) e já sabemos como delegar ações reais a métodos Java (Tool Calling). Falta ainda o primeiro passo do pipeline completo: transformar um áudio em texto processável.
+Já sabemos conversar com o Gemini (`ChatModel`, `ChatClient`) e já sabemos como delegar ações reais a métodos Java (Tool Calling, confirmado com logs reais na Parte 5). Falta ainda o primeiro passo do pipeline completo: transformar um áudio em texto processável.
 
 ### Objetivo
 
 Transformar um arquivo de áudio (a fala do usuário) em texto — o primeiro elo real da cadeia **Áudio → STT → Tool Calling → TTS → Áudio**.
 
-> **📁 Arquivos desta etapa:**
-> 1. **Adicionar seus próprios áudios de teste** em `src/test/resources/audio/` — grave (ou peça para alguém gravar) seis áudios curtos, em português, cada um descrevendo um gasto com um valor diferente, e nomeie-os `recording-1.mp3` a `recording-6.mp3`. **Estes arquivos não vêm de lugar nenhum pronto — você precisa criá-los você mesmo** (celular, gravador do computador, etc.), já que são a "matéria-prima" real que o teste vai transcrever. Ajuste os valores esperados no `@CsvSource` do passo 2 para bater com o que você de fato falou em cada gravação.
-> 2. **Criar** `src/test/java/dio/budgeting/GeminiTranscriptionModelIT.java` — o teste parametrizado (seção 6.5), usando os áudios do passo 1.
-> 3. **Criar** `src/main/java/dio/budgeting/TranscriptionController.java` — **apenas o método `transcribe`**, por enquanto (seção 6.3/6.4). Este arquivo será **reaberto e expandido** na Parte 11, ganhando mais dois métodos e um construtor bem mais completo — não se preocupe em deixá-lo "definitivo" agora.
->
-> Nenhuma dependência nova no `build.gradle` — a transcrição reaproveita o mesmo `GoogleGenAiChatModel` já configurado desde a Parte 3.
+### Visão geral desta etapa — os 3 passos, em ordem
 
-### 6.1. O caminho ensinado no curso: `TranscriptionModel` (OpenAI/Whisper)
+| Passo | Ação | Arquivo/Local |
+|---|---|---|
+| 1 | Gravar seus próprios áudios de teste | `budgeting/src/test/resources/audio/recording-1.mp3` a `recording-6.mp3` |
+| 2 | Criar o teste parametrizado | `budgeting/src/test/java/dio/budgeting/GeminiTranscriptionModelIT.java` |
+| 3 | Criar o controller (versão inicial — será expandido na Parte 11) | `budgeting/src/main/java/dio/budgeting/TranscriptionController.java` |
+
+Mesma ordem lógica das Partes anteriores: matéria-prima primeiro (Passo 1), teste depois (Passo 2), endpoint HTTP por último (Passo 3). Nenhuma dependência nova no `build.gradle` — a transcrição reaproveita o mesmo `GoogleGenAiChatModel` já configurado desde a Parte 3.
+
+### 6.1. O caminho ensinado no curso: `TranscriptionModel` (OpenAI/Whisper) — leitura, antes do código
 
 O Spring AI define, para transcrição, uma interface dedicada:
 
-> **⚠️ Não crie nenhum arquivo para este bloco — e, neste caso específico, você nunca vai usá-lo de fato.** Este código existe dentro do Spring AI, mas **não tem implementação para o Gemini** (é justamente o assunto desta Parte). Ele é mostrado apenas para você entender o que o curso ensina com OpenAI, antes de ver, na seção 6.3, a solução real que você vai implementar.
+> **⚠️ Não crie nenhum arquivo para este bloco — e, neste caso específico, você nunca vai usá-lo de fato.** Este código existe dentro do Spring AI, mas **não tem implementação para o Gemini** (é justamente o assunto desta Parte). Ele é mostrado apenas para você entender o que o curso ensina com OpenAI, antes de ver, na seção 6.4, a solução real que você vai implementar.
 
 ```java
 public interface TranscriptionModel extends Model<AudioTranscriptionPrompt, AudioTranscriptionResponse> {
@@ -988,7 +990,7 @@ public interface TranscriptionModel extends Model<AudioTranscriptionPrompt, Audi
 - **`Resource`** — uma abstração do próprio Spring (não específica de IA, usada em várias partes do framework) para representar "algo que pode ser lido como uma sequência de bytes", independentemente de onde esse conteúdo realmente mora: pode ser um arquivo no disco, um arquivo dentro do *classpath* (empacotado junto do `.jar` da aplicação), um array de bytes já em memória, ou até um arquivo recém-recebido em uma requisição HTTP. É o tipo usado, ao longo de todo este projeto, para representar áudio de entrada, não importa a origem.
 - **`transcribe(Resource resource)`** — um método `default` (mesmo conceito da Parte 3.1: já vem implementado dentro da própria interface) de conveniência: você passa o áudio, recebe diretamente a `String` transcrita, sem precisar montar manualmente um `AudioTranscriptionPrompt`.
 
-No momento em que o curso ensina este conteúdo, o **único provedor suportado** pelo Spring AI para `TranscriptionModel` é a **Whisper API da OpenAI** (e sua variante equivalente no Azure OpenAI). Whisper é o modelo de reconhecimento de fala de propósito geral e multilíngue desenvolvido pela própria OpenAI. A configuração ensinada usa propriedades como (⚠️ **não adicione isto ao seu `application.properties`** — é a configuração da rota OpenAI, que seu projeto não usa; mostrado só para contraste com a seção 6.3):
+No momento em que o curso ensina este conteúdo, o **único provedor suportado** pelo Spring AI para `TranscriptionModel` é a **Whisper API da OpenAI** (e sua variante equivalente no Azure OpenAI). Whisper é o modelo de reconhecimento de fala de propósito geral e multilíngue desenvolvido pela própria OpenAI. A configuração ensinada usa propriedades como (⚠️ **não adicione isto ao seu `application.properties`** — é a configuração da rota OpenAI, que seu projeto não usa; mostrado só para contraste com a seção 6.4):
 
 ```properties
 spring.ai.model.audio.transcription=openai
@@ -1006,9 +1008,26 @@ Este é um dos dois pontos mais importantes de todo o tutorial para entender (o 
 
 > **O que é "multimodalidade" em IA, explicado do zero?** Um modelo é dito **multimodal** quando consegue processar (ou gerar) mais de um tipo de mídia dentro da mesma interação — por exemplo, receber tanto texto quanto uma imagem, e responder considerando os dois juntos ("descreva o que há nesta foto"). Modelos "unimodais", por outro lado, são especializados em um único tipo de entrada/saída — Whisper, por exemplo, foi treinado especificamente para a tarefa de transcrição de áudio, e nada além disso.
 
-### 6.3. A solução adotada: `GoogleGenAiChatModel` + `Media`
+### 6.3. Passo 1 — Gravar seus próprios áudios de teste
 
-O projeto reaproveita o **mesmo** `GoogleGenAiChatModel` já usado desde a Parte 3 para conversas normais, mas monta uma mensagem de usuário com **conteúdo multimídia** anexado, usando a classe `Media` do Spring AI:
+**📁 Local:** `budgeting/src/test/resources/audio/` (pasta nova — crie-a se ainda não existir)
+
+**O que fazer:** grave (com o celular, o gravador do computador, ou qualquer ferramenta simples) **seis áudios curtos**, em português, cada um descrevendo um gasto financeiro com um valor diferente — por exemplo, "gastei oitenta reais no mercado", "paguei quarenta reais de farmácia". Salve cada um no formato `.mp3`, nomeando-os exatamente:
+
+```
+budgeting/src/test/resources/audio/recording-1.mp3
+budgeting/src/test/resources/audio/recording-2.mp3
+budgeting/src/test/resources/audio/recording-3.mp3
+budgeting/src/test/resources/audio/recording-4.mp3
+budgeting/src/test/resources/audio/recording-5.mp3
+budgeting/src/test/resources/audio/recording-6.mp3
+```
+
+**✅ Estes arquivos não vêm de lugar nenhum pronto — são a "matéria-prima" real que o teste do Passo 2 vai transcrever.** Anote, à parte, o valor que você falou em cada gravação (por exemplo, "recording-1.mp3 → falei 80 reais") — você vai precisar disso no Passo 2, para ajustar os valores esperados no teste.
+
+### 6.4. A solução adotada: `GoogleGenAiChatModel` + `Media` — leitura, antes do código
+
+O projeto reaproveita o **mesmo** `GoogleGenAiChatModel` já usado desde a Parte 3 para conversas normais, mas monta uma mensagem de usuário com **conteúdo multimídia** anexado, usando a classe `Media` do Spring AI. Este é o padrão que você vai ver, já pronto, no teste do Passo 2 e no controller do Passo 3 — vale entender cada peça antes de criar os arquivos:
 
 ```java
 private static final String TRANSCRIPTION_PROMPT = """
@@ -1017,52 +1036,57 @@ private static final String TRANSCRIPTION_PROMPT = """
         Retorne APENAS a transcrição do áudio.
         """;
 
-String transcribe(@RequestParam("file") MultipartFile file) {
-    var audioMedia = new Media(MimeTypeUtils.parseMimeType("audio/mpeg"), file.getResource());
+var audioMedia = new Media(MimeTypeUtils.parseMimeType("audio/mpeg"), file.getResource());
 
-    var userMessage = UserMessage.builder()
-            .text(TRANSCRIPTION_PROMPT)
-            .media(List.of(audioMedia))
-            .build();
+var userMessage = UserMessage.builder()
+        .text(TRANSCRIPTION_PROMPT)
+        .media(List.of(audioMedia))
+        .build();
 
-    var prompt = Prompt.builder()
-            .messages(List.of(userMessage))
-            .build();
+var prompt = Prompt.builder()
+        .messages(List.of(userMessage))
+        .build();
 
-    return chatModel.call(prompt).getResult().getOutput().getText();
-}
+chatModel.call(prompt).getResult().getOutput().getText();
 ```
 
-Explicando cada parte, na ordem em que aparece:
-
-- **`private static final String TRANSCRIPTION_PROMPT = """..."""`** — declara uma constante de classe (`static final`, ou seja, um único valor compartilhado por todas as instâncias, que nunca muda depois de definido) contendo o texto de instrução enviado ao modelo. As três aspas duplas (`"""`) abrem um **text block** — um recurso do Java, disponível desde a versão 15, que permite escrever *strings* que ocupam várias linhas sem precisar concatenar manualmente cada uma delas com `"linha 1\n" + "linha 2\n" + ...` — o texto entre `"""` e `"""` é interpretado literalmente, preservando quebras de linha, tornando prompts longos muito mais legíveis de escrever e revisar.
+- **`private static final String TRANSCRIPTION_PROMPT = """...""";`** — declara uma constante de classe (`static final`, ou seja, um único valor compartilhado por todas as instâncias, que nunca muda depois de definido) contendo o texto de instrução enviado ao modelo. As três aspas duplas (`"""`) abrem um **text block** — um recurso do Java, disponível desde a versão 15, que permite escrever *strings* que ocupam várias linhas sem precisar concatenar manualmente cada uma delas com `"linha 1\n" + "linha 2\n" + ...` — o texto entre `"""` e `"""` é interpretado literalmente, preservando quebras de linha, tornando prompts longos muito mais legíveis de escrever e revisar.
 - **`new Media(MimeTypeUtils.parseMimeType("audio/mpeg"), file.getResource())`** — cria um objeto `Media`, que empacota, juntos: (1) o **tipo MIME** do conteúdo anexado, e (2) o conteúdo em si, como um `Resource`.
 
   > **O que é um "tipo MIME", explicado do zero?** MIME (*Multipurpose Internet Mail Extensions*) é um padrão para identificar o **formato/tipo de um arquivo** através de uma string curta e padronizada, no formato `tipo/subtipo` — por exemplo, `text/plain` (texto puro, já visto na Parte 3.4), `application/json` (dados JSON), ou, aqui, `audio/mpeg` (áudio no formato MP3). Esse identificador é usado tanto em requisições/respostas HTTP quanto, como neste caso, para informar a uma IA multimodal **como interpretar** um bloco de bytes anexado — sem essa informação, o Gemini não saberia se aqueles bytes representam um áudio, uma imagem, ou outra coisa.
   - **`MimeTypeUtils.parseMimeType("audio/mpeg")`** — um método utilitário do Spring que converte a `String` `"audio/mpeg"` em um objeto `MimeType` estruturado, validando que o formato é reconhecível.
-  - **`file.getResource()`** — converte o `MultipartFile` (explicado a seguir) — o arquivo recebido dentro da requisição HTTP — para um `Resource`, o tipo esperado pelo construtor de `Media`.
-- **`UserMessage.builder().text(TRANSCRIPTION_PROMPT).media(List.of(audioMedia)).build()`** — usa, mais uma vez, o **padrão Builder** (Parte 3.4) para montar uma `UserMessage` que combina **dois tipos de conteúdo em uma única mensagem**: `.text(...)` adiciona o prompt de instrução (pedindo a transcrição), e `.media(List.of(audioMedia))` anexa o áudio — essa combinação, em uma única mensagem, é exatamente o que caracteriza a multimodalidade explicada na Parte 6.2.
+  - **`file.getResource()`** — converte o `MultipartFile` (explicado na seção 6.6) — o arquivo recebido dentro da requisição HTTP — para um `Resource`, o tipo esperado pelo construtor de `Media`.
+- **`UserMessage.builder().text(TRANSCRIPTION_PROMPT).media(List.of(audioMedia)).build()`** — usa, mais uma vez, o **padrão Builder** (Parte 3.4) para montar uma `UserMessage` que combina **dois tipos de conteúdo em uma única mensagem**: `.text(...)` adiciona o prompt de instrução (pedindo a transcrição), e `.media(List.of(audioMedia))` anexa o áudio — essa combinação, em uma única mensagem, é exatamente o que caracteriza a multimodalidade explicada na seção 6.2.
   - **`List.of(audioMedia)`** — cria uma **lista imutável** (não pode ter itens adicionados ou removidos depois de criada) contendo um único elemento, `audioMedia`. `List.of(...)` é um método de fábrica introduzido no Java moderno para criar listas pequenas e fixas de forma concisa, sem precisar instanciar explicitamente uma `ArrayList` e chamar `.add(...)` em seguida.
 - **`Prompt.builder().messages(List.of(userMessage)).build()`** — monta o `Prompt` final, contendo apenas essa única mensagem multimodal, usando o mesmo padrão Builder já visto (uma forma alternativa ao construtor `new Prompt(texto, options)` usado na Parte 3.4 — aqui, com uma lista de mensagens explícita, em vez de um texto simples).
 - **`chatModel.call(prompt).getResult().getOutput().getText()`** — a mesma cadeia de extração de texto já vista, em detalhe, na Parte 3.4. Repare que, do ponto de vista do código, **não há absolutamente nenhuma diferença estrutural** entre "responder normalmente a uma pergunta de texto" (Parte 3) e "transcrever um áudio" (aqui) — ambos são, para o Spring AI e para o Gemini, apenas "gerar texto a partir de uma mensagem de entrada". A única diferença está no **conteúdo** dessa mensagem de entrada (com ou sem `Media` anexada) e na instrução dada no prompt.
 
-### 6.4. `MultipartFile`: recebendo um arquivo de verdade por HTTP, explicado do zero
+### 6.5. Passo 2 — Criar o teste `GeminiTranscriptionModelIT`
+
+**📁 Arquivo (novo):** `budgeting/src/test/java/dio/budgeting/GeminiTranscriptionModelIT.java`
+
+**O que fazer:** crie este arquivo, dentro de `src/test/...`, com este conteúdo completo. **Antes de colar**, ajuste os valores da coluna direita de cada linha do `@CsvSource` (`80 reais`, `40 reais`, etc.) para bater com o que você **de fato falou** em cada uma das suas seis gravações (Passo 1) — os valores abaixo são só um exemplo:
 
 ```java
-@PostMapping(value = "/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-String transcribe(@RequestParam("file") MultipartFile file) { ... }
-```
+package dio.budgeting;
 
-- **`@PostMapping`**, em vez de `@GetMapping` (visto nas Partes 3 e 4) — usa o verbo HTTP **`POST`**, adequado aqui porque estamos **enviando dados relativamente grandes** (um arquivo de áudio) para o servidor processar, e não apenas pedindo para "buscar" algo através de parâmetros simples na URL (o que seria o uso típico de `GET`).
-- **`consumes = MediaType.MULTIPART_FORM_DATA_VALUE`** — o atributo `consumes` declara qual **tipo de conteúdo** (`Content-Type`) este endpoint aceita receber no corpo da requisição. `MediaType.MULTIPART_FORM_DATA_VALUE` é uma constante que representa a *string* `"multipart/form-data"` — o formato padrão usado por navegadores e ferramentas HTTP para enviar **arquivos binários** dentro de uma requisição (diferente de `application/json`, adequado para dados textuais estruturados, mas não para arquivos brutos).
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.util.MimeTypeUtils;
 
-  > **O que é "multipart/form-data", explicado do zero?** É um formato de corpo de requisição HTTP desenhado especificamente para permitir o envio de **múltiplas partes** de dados diferentes em uma única requisição — cada parte pode ser um campo de texto simples, ou um arquivo binário completo, cada uma identificada por um nome. É o mesmo mecanismo usado, por exemplo, quando você anexa um arquivo em um formulário web tradicional.
-- **`@RequestParam("file") MultipartFile file`** — diferente do `@RequestParam` visto na Parte 4.2 (que lia um parâmetro de *query string*), aqui ele associa este parâmetro à **parte** da requisição multipart cujo nome é `"file"` — ou seja, quem chama este endpoint precisa enviar um campo chamado exatamente `file` dentro do corpo `multipart/form-data`.
-- **`MultipartFile`** — a abstração do Spring Web especificamente pensada para representar um arquivo recebido dentro de uma requisição multipart. Ela oferece métodos como `getBytes()` (o conteúdo bruto como array de bytes) ou `getInputStream()` (um fluxo de leitura) — e, como já vimos, também `getResource()` (Parte 6.3), que converte esse arquivo recebido diretamente em um `Resource` do Spring, pronto para ser usado em qualquer lugar que espere essa abstração mais genérica (como o construtor de `Media`).
+import java.io.IOException;
+import java.util.List;
 
-### 6.5. Teste de integração: `GeminiTranscriptionModelIT`, explicado linha por linha
+import static org.assertj.core.api.Assertions.assertThat;
 
-```java
 @SpringBootTest
 @EnabledIfEnvironmentVariable(named = "GEMINI_API_KEY", matches = ".+")
 public class GeminiTranscriptionModelIT {
@@ -1109,19 +1133,118 @@ public class GeminiTranscriptionModelIT {
 }
 ```
 
+**✅ Este é o arquivo completo** (com os valores de exemplo do `@CsvSource` — não esqueça de ajustá-los aos seus áudios reais antes de rodar).
+
+Explicando as partes novas em relação aos testes das Partes 3 a 5:
+
 - **`@ParameterizedTest`** — em vez de escrever **seis testes** quase idênticos (um para cada arquivo de áudio de exemplo), esta anotação do JUnit 5 instrui o framework a executar o **mesmo método de teste várias vezes**, uma vez para cada linha de dados fornecida (explicada a seguir) — evitando duplicação de código de teste.
 - **`@CsvSource({...})`** — a fonte de dados usada junto de `@ParameterizedTest`: cada `String` dentro das chaves representa uma **linha** de valores separados por vírgula (o formato **CSV**, *Comma-Separated Values*). Para cada linha, o JUnit injeta os valores, na ordem, como argumentos do método de teste — aqui, `fileName` recebe o nome do arquivo (por exemplo, `"recording-1.mp3"`) e `expectedKeyword` recebe a palavra-chave esperada na transcrição (`"80 reais"`).
 - **`public void should_containExpectedKeywords_when_audioFilesAreProcessed(String fileName, String expectedKeyword) throws IOException`** — repare que a assinatura do método já recebe os dois parâmetros que o `@CsvSource` vai preencher a cada execução, na mesma ordem em que aparecem em cada linha do CSV. **`throws IOException`** declara que este método pode lançar essa exceção verificada (ligada a operações de entrada/saída, como ler um arquivo), sem tratá-la internamente — delegando esse tratamento para o próprio framework de testes, que sabe reportar a falha corretamente caso ela ocorra.
-- **`new ClassPathResource("audio/" + fileName)`** — cria um `Resource` (mesma abstração da Parte 6.1) apontando para um arquivo dentro do **classpath** — neste caso, `src/test/resources/audio/`, onde os seis áudios de exemplo estão armazenados. `ClassPathResource` é uma das implementações concretas de `Resource`, especializada em localizar arquivos empacotados junto do próprio projeto (em oposição a, por exemplo, um arquivo em um caminho arbitrário do disco).
-- **`assertThat(recording.exists()).isTrue();`** — uma verificação **defensiva**, feita **antes mesmo** de chamar a API do Gemini: confirma que o arquivo de áudio realmente existe no caminho esperado. Isso evita que uma falha por "arquivo não encontrado" (um problema de configuração do teste) seja confundida, na hora de investigar uma falha, com uma falha real de transcrição (um problema na integração com a IA) — são causas completamente diferentes, e separar essa verificação ajuda a diagnosticar rapidamente qual delas ocorreu.
+- **`new ClassPathResource("audio/" + fileName)`** — cria um `Resource` (mesma abstração da seção 6.1) apontando para um arquivo dentro do **classpath** — neste caso, `src/test/resources/audio/`, onde você acabou de salvar os seis áudios (Passo 1). `ClassPathResource` é uma das implementações concretas de `Resource`, especializada em localizar arquivos empacotados junto do próprio projeto (em oposição a, por exemplo, um arquivo em um caminho arbitrário do disco).
+- **`assertThat(recording.exists()).isTrue();`** — uma verificação **defensiva**, feita **antes mesmo** de chamar a API do Gemini: confirma que o arquivo de áudio realmente existe no caminho esperado. Isso evita que uma falha por "arquivo não encontrado" (um problema de configuração do teste — por exemplo, um nome de arquivo digitado errado no Passo 1) seja confundida, na hora de investigar uma falha, com uma falha real de transcrição (um problema na integração com a IA) — são causas completamente diferentes, e separar essa verificação ajuda a diagnosticar rapidamente qual delas ocorreu.
 - **A sequência de asserções encadeadas** (`assertThat(result).isNotNull()`, depois `assertThat(output).isNotNull()`, depois `assertThat(response).isNotNull().isNotEmpty()`) — em vez de extrair o texto final em uma única linha (como fizemos na Parte 3.4, com `.getResult().getOutput().getText()` tudo junto), este teste **quebra a cadeia em passos**, verificando a cada passo que o valor intermediário não é nulo. Essa é uma prática de teste mais robusta: se, por exemplo, `result` viesse nulo por algum motivo inesperado, o teste falharia exatamente **naquele ponto**, com uma mensagem de erro clara ("`result` era nulo"), em vez de lançar um `NullPointerException` genérico e menos informativo mais adiante, ao tentar chamar `.getOutput()` sobre um valor nulo.
-- **`.containsIgnoringCase(expectedKeyword)`** — uma variante do `.contains(...)` já visto na Parte 4.3, que ignora diferenças entre maiúsculas e minúsculas ao comparar. Mais uma vez, uma asserção **flexível**, pelo mesmo motivo já discutido: a transcrição gerada por um LLM não é garantidamente idêntica, caractere por caractere, a cada execução — o modelo poderia escrever `"80 Reais"` em vez de `"80 reais"`, por exemplo, e ambas seriam transcrições corretas.
+- **`.containsIgnoringCase(expectedKeyword)`** — uma variante do `.contains(...)` já visto na Parte 4.2, que ignora diferenças entre maiúsculas e minúsculas ao comparar. Mais uma vez, uma asserção **flexível**, pelo mesmo motivo já discutido nas Partes anteriores: a transcrição gerada por um LLM não é garantidamente idêntica, caractere por caractere, a cada execução — o modelo poderia escrever `"80 Reais"` em vez de `"80 reais"`, por exemplo, e ambas seriam transcrições corretas.
 
-> **Observação sobre um comportamento real dos modelos de fala, útil para você saber de antemão:** tanto no curso (com Whisper) quanto na experiência prática com o Gemini, a transcrição de **números** é um ponto historicamente sensível — o modelo pode optar por escrever um valor **por extenso** ("duzentos reais") em vez de em algarismos ("200 reais"), e isso poderia fazer uma asserção mais rígida falhar mesmo diante de uma transcrição semanticamente correta. É exatamente por isso que o prompt de transcrição (Parte 6.3) é explícito ao dar contexto ao modelo sobre o domínio ("contém descrição de gastos financeiros") — essa informação extra ajuda a guiar o modelo para um formato de saída mais consistente e previsível.
+> **Observação sobre um comportamento real dos modelos de fala, útil para você saber de antemão:** tanto no curso (com Whisper) quanto na experiência prática com o Gemini, a transcrição de **números** é um ponto historicamente sensível — o modelo pode optar por escrever um valor **por extenso** ("duzentos reais") em vez de em algarismos ("200 reais"), e isso poderia fazer uma asserção mais rígida falhar mesmo diante de uma transcrição semanticamente correta. É exatamente por isso que o prompt de transcrição é explícito ao dar contexto ao modelo sobre o domínio ("contém descrição de gastos financeiros") — essa informação extra ajuda a guiar o modelo para um formato de saída mais consistente e previsível. Se, ao rodar, algum caso falhar por esse motivo, ajuste o valor esperado no `@CsvSource` para o formato que o Gemini de fato devolveu (visível no `System.out.println` do teste), em vez de tentar forçar um formato específico.
 
-### 6.6. Checkpoint da Parte 6
+**Rode este teste agora**, antes de seguir para o Passo 3 — são seis execuções (uma por linha do `@CsvSource`); confira, no relatório do JUnit (pela IDE, é a forma mais clara), que todas as seis passaram.
 
-Confirmado no `.zip`: **não existe** nenhuma classe `TranscriptionModel`, nenhuma propriedade `spring.ai.*.audio.transcription.*` no projeto final — a rota da OpenAI/Whisper, ensinada na aula, não foi implementada, já que não existe equivalente para o Gemini. Em vez disso, `TranscriptionController.java` (cujo estado completo e final só será visto na Parte 11, já que esse arquivo acumula responsabilidades entre os Vídeos 06 e 11) já nasce usando o `GoogleGenAiChatModel` multimodal para transcrição, e os seis áudios de teste (`recording-1.mp3` a `recording-6.mp3`) estão em `src/test/resources/audio/`, validados por `GeminiTranscriptionModelIT`.
+### 6.6. `MultipartFile`: recebendo um arquivo de verdade por HTTP, explicado do zero — leitura, antes do código
+
+Antes de criar o controller do Passo 3, vale entender a peça que falta: como um arquivo de áudio chega até a aplicação através de uma requisição HTTP (diferente do teste do Passo 2, que lê o áudio direto do *classpath*).
+
+```java
+@PostMapping(value = "/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+String transcribe(@RequestParam("file") MultipartFile file) { ... }
+```
+
+- **`@PostMapping`**, em vez de `@GetMapping` (visto nas Partes 3 e 4) — usa o verbo HTTP **`POST`**, adequado aqui porque estamos **enviando dados relativamente grandes** (um arquivo de áudio) para o servidor processar, e não apenas pedindo para "buscar" algo através de parâmetros simples na URL (o que seria o uso típico de `GET`).
+- **`consumes = MediaType.MULTIPART_FORM_DATA_VALUE`** — o atributo `consumes` declara qual **tipo de conteúdo** (`Content-Type`) este endpoint aceita receber no corpo da requisição. `MediaType.MULTIPART_FORM_DATA_VALUE` é uma constante que representa a *string* `"multipart/form-data"` — o formato padrão usado por navegadores e ferramentas HTTP para enviar **arquivos binários** dentro de uma requisição (diferente de `application/json`, adequado para dados textuais estruturados, mas não para arquivos brutos).
+
+  > **O que é "multipart/form-data", explicado do zero?** É um formato de corpo de requisição HTTP desenhado especificamente para permitir o envio de **múltiplas partes** de dados diferentes em uma única requisição — cada parte pode ser um campo de texto simples, ou um arquivo binário completo, cada uma identificada por um nome. É o mesmo mecanismo usado, por exemplo, quando você anexa um arquivo em um formulário web tradicional.
+- **`@RequestParam("file") MultipartFile file`** — diferente do `@RequestParam` visto na Parte 4.3 (que lia um parâmetro de *query string*), aqui ele associa este parâmetro à **parte** da requisição multipart cujo nome é `"file"` — ou seja, quem chama este endpoint precisa enviar um campo chamado exatamente `file` dentro do corpo `multipart/form-data`.
+- **`MultipartFile`** — a abstração do Spring Web especificamente pensada para representar um arquivo recebido dentro de uma requisição multipart. Ela oferece métodos como `getBytes()` (o conteúdo bruto como array de bytes) ou `getInputStream()` (um fluxo de leitura) — e, como já vimos, também `getResource()` (seção 6.4), que converte esse arquivo recebido diretamente em um `Resource` do Spring, pronto para ser usado em qualquer lugar que espere essa abstração mais genérica (como o construtor de `Media`).
+
+### 6.7. Passo 3 — Criar `TranscriptionController` (versão inicial)
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/TranscriptionController.java`
+
+**O que fazer:** crie este arquivo, dentro de `src/main/java/dio/budgeting/`, com este conteúdo:
+
+```java
+package dio.budgeting;
+
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.http.MediaType;
+import org.springframework.util.MimeTypeUtils;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api")
+public class TranscriptionController {
+
+    private static final String TRANSCRIPTION_PROMPT = """
+            Transcreva o áudio a seguir com fidelidade em português brasileiro.
+            Contexto do áudio: contém descrição de gastos financeiros.
+            Retorne APENAS a transcrição do áudio.
+            """;
+
+    private final GoogleGenAiChatModel chatModel;
+
+    public TranscriptionController(GoogleGenAiChatModel chatModel) {
+        this.chatModel = chatModel;
+    }
+
+    @PostMapping(value = "/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    String transcribe(@RequestParam("file") MultipartFile file) {
+        var audioMedia = new Media(MimeTypeUtils.parseMimeType("audio/mpeg"), file.getResource());
+
+        var userMessage = UserMessage.builder()
+                .text(TRANSCRIPTION_PROMPT)
+                .media(List.of(audioMedia))
+                .build();
+
+        var prompt = Prompt.builder()
+                .messages(List.of(userMessage))
+                .build();
+
+        return chatModel.call(prompt).getResult().getOutput().getText();
+    }
+
+}
+```
+
+**✅ Este é o arquivo completo — por enquanto.** Ele será **reaberto e substituído por uma versão mais completa** na Parte 11, ganhando mais duas dependências injetadas, um construtor maior, e dois métodos novos (`readTransactions` e `processAudio`). Não se preocupe em deixá-lo "definitivo" agora — o padrão de injeção via construtor (`GoogleGenAiChatModel chatModel`, já explicado em detalhe na Parte 3.6) é o mesmo que você já domina.
+
+**Testando manualmente**, com a aplicação rodando — este endpoint recebe um arquivo, então o `curl` precisa de uma sintaxe diferente dos anteriores (com `-F`, indicando um campo de formulário do tipo arquivo):
+
+```bash
+curl -X POST "http://localhost:8080/api/transcribe" \
+  -F "file=@src/test/resources/audio/recording-1.mp3;type=audio/mpeg"
+```
+
+> **Nota sobre o `curl` acima:** `-F "file=@caminho;type=audio/mpeg"` monta uma requisição `multipart/form-data`, exatamente o formato esperado pelo `consumes` do endpoint (seção 6.6). O `@` antes do caminho instrui o `curl` a ler o conteúdo do arquivo e enviá-lo como corpo da requisição, em vez de tratar o caminho como texto literal. Ajuste o caminho do arquivo se estiver rodando o `curl` de um diretório diferente de `budgeting/`.
+
+Deve devolver, como texto puro, a transcrição do áudio enviado.
+
+### 6.8. Checkpoint da Parte 6
+
+| Arquivo | Ação nesta Parte |
+|---|---|
+| `budgeting/src/test/resources/audio/recording-1.mp3` a `recording-6.mp3` | **Criados** (gravados por você) |
+| `budgeting/src/test/java/dio/budgeting/GeminiTranscriptionModelIT.java` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/TranscriptionController.java` | **Criado** (versão inicial — expandida na Parte 11) |
+
+Confirmado no `.zip` original do curso: **não existe** nenhuma classe `TranscriptionModel`, nenhuma propriedade `spring.ai.*.audio.transcription.*` no projeto final — a rota da OpenAI/Whisper, ensinada na aula, não foi implementada, já que não existe equivalente para o Gemini.
 
 **Recapitulando:** conseguimos transformar áudio em texto sem depender de uma interface do Spring AI que simplesmente não existe para o Gemini — reaproveitando o mesmo `ChatModel` já usado desde a Parte 3, só que agora com uma mensagem multimodal. Esse mesmo raciocínio — "o Spring AI não tem uma abstração pronta para isto no Gemini, então vamos resolver de outra forma, entendendo *por que* a lacuna existe" — vai se repetir, de forma ainda mais acentuada, na Parte 7, para o problema inverso: transformar texto em áudio.
 

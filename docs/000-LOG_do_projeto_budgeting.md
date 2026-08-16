@@ -358,3 +358,59 @@ Confirmado via saída do `System.out.println(response)` (`0`) e `BUILD SUCCESSFU
 **Próximo passo planejado:** Parte 6 do tutorial (Vídeo 06) — primeiro ponto de divergência real com o curso original (transcrição de áudio, sem `TranscriptionModel` disponível para Gemini): gravar os seis áudios de teste próprios, criar `GeminiTranscriptionModelIT.java` e a primeira versão de `TranscriptionController.java` (apenas o método `transcribe`, expandido depois na Parte 11).
 
 ---
+
+## 📝 LOG DE EXECUÇÃO — DIA 04
+
+**Data:** 16/08/2026
+**Contexto:** Confirmação reforçada do checkpoint da Parte 5 (Tool Calling), e preparação do tutorial para a Parte 6 — nenhuma implementação de código nova nesta sessão, foco em validação e documentação.
+
+---
+
+## 8. ✅ Confirmação reforçada — Parte 5 (Tool Calling) comprovado via logs de execução real
+
+Nova execução de `ToolCallingIT` produziu evidência mais completa do que a rodada anterior (DIA 03): o console mostrou, explicitamente, as classes internas do Spring AI executando **cada** *tool* de verdade:
+
+```
+DefaultToolCallingManager : Executing tool call: sum
+MethodToolCallback        : Starting execution of tool: sum
+MethodToolCallback        : Successful execution of tool: sum
+DefaultToolCallResultConverter : Converting tool result to JSON.
+DefaultToolCallingManager : Executing tool call: diff
+MethodToolCallback        : Starting execution of tool: diff
+MethodToolCallback        : Successful execution of tool: diff
+DefaultToolCallResultConverter : Converting tool result to JSON.
+0
+```
+
+**Leitura do log, confirmando o fluxo teórico da seção 5.1 do tutorial:**
+
+| Evidência no log | Etapa do fluxo de Tool Calling |
+| --- | --- |
+| `Executing tool call: sum` | Modelo decidiu chamar `sum`; aplicação prestes a executar de verdade |
+| `Starting/Successful execution of tool: sum` | `sum(10, 20)` executado como código Java real → `30` |
+| `Converting tool result to JSON` | Resultado preparado para retornar ao modelo |
+| *(sequência repetida para `diff`)* | `diff(30, 30)` executado com o resultado real de `sum`, não uma suposição → `0` |
+
+**Por que essa confirmação é mais forte que a do DIA 03:** a execução anterior só mostrava o resultado final (`0`), sem provar que o cálculo foi de fato delegado a `sum`/`diff` (em vez de "adivinhado" pelo modelo, como na Parte 4). Esta nova evidência prova, através das classes `DefaultToolCallingManager` e `MethodToolCallback` aparecendo duas vezes cada, que **as duas ferramentas foram executadas de verdade, na ordem certa, e encadeadas corretamente** (o resultado de `sum` foi usado como entrada de `diff`).
+
+### 8.1. ✅ Checkpoint da Parte 5 — atualizado e reforçado
+
+| Item | Status |
+| --- | --- |
+| `ToolCallingIT` — criado, rodado e passando | ✅ |
+| Tool Calling confirmado via logs (`DefaultToolCallingManager`, `MethodToolCallback`) para **ambas** as ferramentas, em sequência correta | ✅ |
+
+---
+
+## 9. 📚 Atualização do material de estudo — Tutorial reescrito para a Parte 6 (formato de receita explícita)
+
+Sem execução de código nesta sessão — trabalho de preparação do material para a próxima etapa prática.
+
+**Alterações aplicadas ao `000-Tutorial_Budgeting_Spring_AI_COMPLETO.md`:**
+
+1. **Parte 6 (Vídeo 06 — Transcrição) reescrita integralmente** no formato de receita explícita já usado nas Partes 1 a 5: tabela de 3 passos (gravar áudios → criar teste → criar controller), com **`📁 Arquivo`** e **`✅`** de confirmação em cada um, e as explicações conceituais (interface `TranscriptionModel` da OpenAI, motivo da lacuna no Gemini, `Media`/multimodalidade, `MultipartFile`) reorganizadas como blocos de leitura **antes** do código correspondente, em vez de misturadas com a criação de arquivos.
+2. Incluídos, pela primeira vez de forma explícita nesta Parte: os arquivos completos com `import`s (o teste `GeminiTranscriptionModelIT.java` e o controller `TranscriptionController.java`, versão inicial), e um comando `curl -F` de teste manual para o endpoint `/api/transcribe` (sintaxe multipart, diferente dos `curl` de query string usados nas Partes 3 e 4).
+
+**Próximo passo planejado:** executar a Parte 6 no projeto real — gravar os seis áudios de teste, criar `GeminiTranscriptionModelIT.java` (ajustando os valores esperados do `@CsvSource` às gravações reais) e `TranscriptionController.java`.
+
+---
