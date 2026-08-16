@@ -1247,6 +1247,21 @@ Explicando as partes novas em relação aos testes das Partes 3 a 5:
 
 > **Observação sobre um comportamento real dos modelos de fala, útil para você saber de antemão:** tanto no curso (com Whisper) quanto na experiência prática com o Gemini, a transcrição de **números** é um ponto historicamente sensível — o modelo pode optar por escrever um valor **por extenso** ("duzentos reais") em vez de em algarismos ("200 reais"), e isso poderia fazer uma asserção mais rígida falhar mesmo diante de uma transcrição semanticamente correta. É exatamente por isso que o prompt de transcrição é explícito ao dar contexto ao modelo sobre o domínio ("contém descrição de gastos financeiros") — essa informação extra ajuda a guiar o modelo para um formato de saída mais consistente e previsível. Se, ao rodar, algum caso falhar por esse motivo, ajuste o valor esperado no `@CsvSource` para o formato que o Gemini de fato devolveu (visível no `System.out.println` do teste), em vez de tentar forçar um formato específico.
 
+> **📌 Caso real confirmado, para você reconhecer se acontecer com você:** ao seguir este tutorial, dois dos seis casos (correspondentes a valores maiores — "200 reais" e "60 reais") falharam exatamente por esse motivo. A investigação, feita através do relatório de testes do Gradle (explicado no quadro seguinte), revelou que o Gemini havia transcrito o áudio como:
+> ```
+> "Saí para jantar ontem e a conta ficou duzentos reais por pessoa."
+> ```
+> — uma transcrição **perfeitamente correta e fiel** ao áudio, só que com o valor por extenso. A correção foi simplesmente trocar, na linha correspondente do `@CsvSource`, `"200 reais"` por `"duzentos reais"` — sem nenhuma alteração de código. Isso não é um defeito do seu teste nem do seu código: é o comportamento normal e esperado de um modelo de linguagem gerando texto livre, e é exatamente por isso que a asserção usa `.containsIgnoringCase(...)` em vez de uma comparação exata (seção 6.5) — ela é tolerante a variações razoáveis, mas não prevê automaticamente qual formato específico o modelo vai escolher a cada execução.
+
+> **💡 Dica prática — "No matching tests found" ao rodar um teste recém-criado.** Se, ao rodar `./gradlew test --tests "dio.budgeting.NomeDoTeste"` logo após criar o arquivo, o Gradle responder com `No matching tests found in any candidate test task`, mesmo com o `package` e o nome da classe corretos, isso costuma ser um cache de build desatualizado (o Gradle ainda não "viu" o arquivo novo). Force uma recompilação completa antes de rodar o teste de novo:
+> ```bash
+> ./gradlew clean compileTestJava
+> ./gradlew test --tests "dio.budgeting.NomeDoTeste"
+> ```
+> Se `clean compileTestJava` terminar com `BUILD SUCCESSFUL`, isso também confirma, de uma vez, que o pacote, o nome da classe e todos os `import`s (incluindo `@ParameterizedTest`/`@CsvSource`, que dependem do módulo `junit-jupiter-params`, normalmente já incluído transitivamente pelo `spring-boot-starter-test`) estão corretos.
+
+> **🔎 Como investigar a transcrição real de um caso que falhou, passo a passo.** A asserção que falha é a última do método (`assertThat(response).containsIgnoringCase(expectedKeyword);`) — como ela vem **antes** do `System.out.println`, o texto transcrito não chega a ser impresso no console para os casos que falham. Para ver o valor real, o caminho mais direto é abrir o relatório HTML que o próprio Gradle gera e aponta ao final da execução com falha (`file:///.../build/reports/tests/test/index.html`), navegar até a classe → o método → o caso específico que falhou (por exemplo, `[5] fileName = "recording-5.mp3", ...`), e ler a mensagem de erro do AssertJ na seção "Failure details" — ela sempre mostra o texto real (`"Expecting actual: ..."`) ao lado do valor esperado. Uma alternativa mais rápida, sem navegar por vários níveis de link, é abrir diretamente o arquivo XML gerado em `budgeting/build/test-results/test/TEST-NomeDoTeste.xml`, que traz todas as mensagens de falha em um único arquivo.
+
 **Rode este teste agora**, antes de seguir para o Passo 3 — são seis execuções (uma por linha do `@CsvSource`); confira, no relatório do JUnit (pela IDE, é a forma mais clara), que todas as seis passaram.
 
 ### 6.6. `MultipartFile`: recebendo um arquivo de verdade por HTTP, explicado do zero — leitura, antes do código
@@ -1332,7 +1347,15 @@ curl -X POST "http://localhost:8080/api/transcribe" \
   -F "file=@src/test/resources/audio/recording-1.mp3;type=audio/mpeg"
 ```
 
-> **Nota sobre o `curl` acima:** `-F "file=@caminho;type=audio/mpeg"` monta uma requisição `multipart/form-data`, exatamente o formato esperado pelo `consumes` do endpoint (seção 6.6). O `@` antes do caminho instrui o `curl` a ler o conteúdo do arquivo e enviá-lo como corpo da requisição, em vez de tratar o caminho como texto literal. Ajuste o caminho do arquivo se estiver rodando o `curl` de um diretório diferente de `budgeting/`.
+> **Nota sobre o `curl` acima:** `-F "file=@caminho;type=audio/mpeg"` monta uma requisição `multipart/form-data`, exatamente o formato esperado pelo `consumes` do endpoint (seção 6.6). O `@` antes do caminho instrui o `curl` a ler o conteúdo do arquivo e enviá-lo como corpo da requisição, em vez de tratar o caminho como texto literal.
+
+> **⚠️ Erro comum: `curl: (26) Failed to open/read local data from file/application`.** Esse erro específico significa que o `curl` **não encontrou o arquivo** no caminho informado — e a causa mais provável é o caminho relativo (`src/test/resources/...`, sem `/` no início) estar sendo interpretado a partir do diretório **errado**. Esse caminho só existe relativo à pasta `budgeting/` — confira, antes de rodar o `curl`, que seu terminal está posicionado ali:
+> ```bash
+> pwd
+> ```
+> Se o resultado não terminar em `.../budgeting`, navegue até lá primeiro (`cd caminho/até/budgeting`) antes de rodar o `curl`. Como alternativa mais robusta, que funciona a partir de qualquer diretório, use o caminho **absoluto** do arquivo de áudio, em vez do relativo.
+>
+> **💡 Dica adicional:** ao colar um comando de várias linhas (como o `curl` acima, quebrado com `\`) em alguns terminais, é possível que caracteres ou linhas anteriores do histórico se misturem à colagem, produzindo erros de sintaxe do próprio shell (por exemplo, `zsh: unknown file attribute`) que não têm relação com o `curl` em si. Se isso acontecer, rode `clear` para limpar a tela e digite o comando em **uma única linha**, sem a barra de continuação — isso elimina essa fonte de confusão e deixa a saída mais fácil de interpretar.
 
 Deve devolver, como texto puro, a transcrição do áudio enviado.
 

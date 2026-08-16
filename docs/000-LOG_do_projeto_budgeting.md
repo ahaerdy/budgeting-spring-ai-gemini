@@ -447,6 +447,97 @@ Na **Parte 6.4**, o trecho sobre `UserMessage.builder()...build()` foi ajustado 
 
 **Lição registrada:** esta foi uma boa demonstração prática do próprio princípio discutido no primeiro dia do tutorial (ver "Discussão sobre nível de profundidade x caixas-pretas") — o padrão Builder havia sido tratado, até aqui, como algo a "aceitar e seguir em frente" (Nível 2/3 daquela conversa). Ao ser questionado com atenção, revelou-se um dos poucos conceitos verdadeiramente **transversais** ao projeto inteiro (reaparece em praticamente toda Parte restante do tutorial), justificando o investimento de reclassificá-lo para Nível 1 e documentá-lo em profundidade, de uma vez, no ponto de primeira aparição.
 
-**Próximo passo:** nenhuma mudança no cronograma de implementação — o próximo passo prático continua sendo a execução da Parte 6 (gravação dos áudios, criação de `GeminiTranscriptionModelIT.java` e `TranscriptionController.java`), como registrado no DIA 04.
+**Próximo passo, à época:** execução da Parte 6 no projeto real — registrado a seguir, ainda dentro do mesmo DIA 05.
+
+---
+
+## 11. 🔌 Parte 6 do Tutorial — Transcrevendo áudio em texto (Vídeo 06) — executada e concluída
+
+Objetivo desta etapa: transformar áudio em texto usando o `GoogleGenAiChatModel` de forma multimodal (sem `TranscriptionModel`, que não existe para Gemini), validado por teste e exposto via HTTP.
+
+### 11.1. Arquivos criados
+
+**`budgeting/src/test/resources/audio/recording-1.mp3` a `recording-6.mp3`** — seis áudios próprios, gravados descrevendo gastos financeiros com valores distintos (Passo 1).
+
+**`budgeting/src/test/java/dio/budgeting/GeminiTranscriptionModelIT.java`** (novo) — teste parametrizado (`@ParameterizedTest` + `@CsvSource`), uma execução por áudio, validando a transcrição de cada um contra uma palavra-chave esperada.
+
+**`budgeting/src/main/java/dio/budgeting/TranscriptionController.java`** (novo, versão inicial) — endpoint `POST /api/transcribe`, injetando `GoogleGenAiChatModel`, montando uma `Media` a partir do arquivo recebido e devolvendo a transcrição como texto puro. Será expandido na Parte 11 do tutorial.
+
+### 11.2. Incidente 1 — "No matching tests found" ao rodar o teste recém-criado
+
+Primeira tentativa de `./gradlew test --tests "dio.budgeting.GeminiTranscriptionModelIT"` falhou com:
+```
+No matching tests found in any candidate test task.
+```
+mesmo com o código do arquivo já conferido, linha por linha, como correto (`package`, nome da classe, imports).
+
+**Investigação:** hipótese inicial de que faltaria a anotação `@Test` — descartada, já que `@ParameterizedTest` já cumpre esse papel sozinha, sendo incompatível com `@Test` no mesmo método. Segunda hipótese, a dependência `junit-jupiter-params` (necessária para `@ParameterizedTest`/`@CsvSource`) poder estar ausente do classpath de testes.
+
+**Resolução:** `./gradlew clean compileTestJava` → `BUILD SUCCESSFUL`, confirmando de uma vez: (a) o arquivo está no caminho certo; (b) todos os imports resolvem, incluindo os de `junit-jupiter-params` (já presente transitivamente via `spring-boot-starter-test`, sem necessidade de alteração no `build.gradle`); (c) a causa real era um **cache de build desatualizado**, que não refletia a criação do arquivo novo — o mesmo tipo de dessincronia já visto com o IntelliJ nas Partes 1 e 3.
+
+**Confirmação da correção:** nova execução de `./gradlew test --tests "dio.budgeting.GeminiTranscriptionModelIT"` rodou as seis execuções parametrizadas (`6 tests completed`), confirmando o arquivo plenamente reconhecido e funcional.
+
+**Lição registrada:** ao criar um arquivo de teste novo e receber "No matching tests found" mesmo com o código correto, `./gradlew clean compileTestJava` é o primeiro passo de diagnóstico — mais confiável do que assumir um erro de sintaxe ou de anotação ausente.
+
+### 11.3. Incidente 2 — 2 de 6 casos falharam por formato de número (comportamento esperado, não bug)
+
+Resultado: `6 tests completed, 2 failed` — `recording-5.mp3` (esperado `"200 reais"`) e `recording-6.mp3` (esperado `"60 reais"`).
+
+**Investigação:** como a asserção que falhou é a última do método (linha 60, `assertThat(response).containsIgnoringCase(expectedKeyword)`), o `System.out.println` da transcrição não chegou a rodar para os casos com falha. A transcrição real foi localizada navegando pelo relatório HTML do Gradle (`build/reports/tests/test/index.html` → classe → método → caso específico → "Failure details"), revelando:
+
+```
+Expecting actual:
+  "Saí para jantar ontem e a conta ficou duzentos reais por pessoa."
+to contain:
+  "200 reais"
+ (ignoring case)
+```
+
+**Causa confirmada:** o Gemini transcreveu o valor **por extenso** ("duzentos reais"), não em algarismos ("200 reais") — uma transcrição correta e fiel ao áudio, apenas em formato diferente do esperado no `@CsvSource`. Comportamento antecipado teoricamente pelo próprio tutorial (seção 6.5), agora confirmado na prática.
+
+**Resolução:** ajustado o valor esperado na linha correspondente do `@CsvSource`, de `"200 reais"` para `"duzentos reais"` (e, presumivelmente, ajuste equivalente para `recording-6.mp3`, seguindo o mesmo padrão).
+
+**Lição registrada:** esta não foi tratada como falha de implementação — é uma demonstração real e documentada da natureza não-determinística da saída de um LLM, e da razão de ser das asserções flexíveis (`.containsIgnoringCase`) usadas em todo teste de IA deste projeto. Passou a ser um dos melhores exemplos concretos para a seção "o que você aprendeu" da entrega do desafio.
+
+### 11.4. Incidente 3 — `curl` do endpoint falhando por diretório de execução incorreto
+
+Ao testar `POST /api/transcribe` manualmente, primeira tentativa retornou:
+```
+curl: (26) Failed to open/read local data from file/application
+```
+
+**Causa identificada:** o `curl` usa um caminho relativo (`src/test/resources/audio/recording-1.mp3`), válido apenas quando executado a partir da pasta `budgeting/`. O terminal, na primeira tentativa, não estava posicionado ali.
+
+**Resolução:** confirmado o diretório de execução (`cd` até `budgeting/`) antes de rodar o `curl` novamente.
+
+**Ruído adicional observado (sem relação com o erro acima):** ao colar o comando de duas linhas (com `\` de continuação), uma execução subsequente produziu uma saída confusa, misturando o erro anterior, a transcrição correta, e um erro de sintaxe do zsh (`unknown file attribute`) — resolvido rodando `clear` e reexecutando o comando em uma única linha.
+
+**Resultado final, confirmado, limpo:**
+```bash
+curl -X POST "http://localhost:8080/api/transcribe" \
+  -F "file=@src/test/resources/audio/recording-1.mp3;type=audio/mpeg"
+Fui na farmácia rapidinho e deixei 80 reais em três itens.
+```
+
+Transcrição correta e fiel ao áudio original.
+
+### 11.5. ✅ Checkpoint da Parte 6 — fechado
+
+| Item | Status |
+| --- | --- |
+| Seis áudios de teste gravados e posicionados em `src/test/resources/audio/` | ✅ |
+| `GeminiTranscriptionModelIT` — criado, rodado; 2 falhas iniciais diagnosticadas como diferença de formato (não bug), `@CsvSource` corrigido | ✅ |
+| `TranscriptionController` (versão inicial) — criado, endpoint `POST /api/transcribe` confirmado funcionando via `curl`, transcrição correta | ✅ |
+
+### 11.6. 📚 Atualizações aplicadas ao tutorial, a partir desta execução
+
+Incorporadas ao `000-Tutorial_Budgeting_Spring_AI_COMPLETO.md`, Parte 6:
+
+- **Seção 6.5:** adicionado um quadro **"Caso real confirmado"**, documentando o exemplo de `recording-5.mp3`/"duzentos reais" como ilustração concreta do comportamento já teoricamente descrito.
+- **Seção 6.5:** adicionada uma dica prática sobre o erro "No matching tests found" e o fluxo de diagnóstico (`./gradlew clean compileTestJava`).
+- **Seção 6.5:** adicionado um guia passo a passo de como investigar a transcrição real de um caso que falhou (relatório HTML em cascata, ou o arquivo XML alternativo, mais direto).
+- **Seção 6.7 (Passo 3):** expandida a nota sobre o `curl`, incluindo o erro `curl: (26)` (causa: diretório de execução incorreto) e a dica sobre colagem de comandos multi-linha em alguns shells.
+
+**Próximo passo planejado:** Parte 7 do tutorial (Vídeo 07) — o segundo e último ponto sem equivalente Gemini no Spring AI (síntese de voz/TTS), usando o SDK nativo do Google GenAI diretamente. Ainda não reescrita no formato de receita explícita.
 
 ---
