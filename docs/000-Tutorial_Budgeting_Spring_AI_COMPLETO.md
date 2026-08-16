@@ -1108,7 +1108,55 @@ chatModel.call(prompt).getResult().getOutput().getText();
   > **O que é um "tipo MIME", explicado do zero?** MIME (*Multipurpose Internet Mail Extensions*) é um padrão para identificar o **formato/tipo de um arquivo** através de uma string curta e padronizada, no formato `tipo/subtipo` — por exemplo, `text/plain` (texto puro, já visto na Parte 3.4), `application/json` (dados JSON), ou, aqui, `audio/mpeg` (áudio no formato MP3). Esse identificador é usado tanto em requisições/respostas HTTP quanto, como neste caso, para informar a uma IA multimodal **como interpretar** um bloco de bytes anexado — sem essa informação, o Gemini não saberia se aqueles bytes representam um áudio, uma imagem, ou outra coisa.
   - **`MimeTypeUtils.parseMimeType("audio/mpeg")`** — um método utilitário do Spring que converte a `String` `"audio/mpeg"` em um objeto `MimeType` estruturado, validando que o formato é reconhecível.
   - **`file.getResource()`** — converte o `MultipartFile` (explicado na seção 6.6) — o arquivo recebido dentro da requisição HTTP — para um `Resource`, o tipo esperado pelo construtor de `Media`.
-- **`UserMessage.builder().text(TRANSCRIPTION_PROMPT).media(List.of(audioMedia)).build()`** — usa, mais uma vez, o **padrão Builder**, já explicado passo a passo (rastreando o que cada `.` devolve, e por que `Builder` é uma classe aninhada dentro da classe principal) na Parte 3.4. Vale só reforçar aqui: `.text(...)` e `.media(...)` são métodos que moram na classe `UserMessage.Builder` (não em `UserMessage` diretamente), e ambos devolvem o próprio `Builder` — é por isso que dá para encadear os dois, um depois do outro, antes do `.build()` final devolver o `UserMessage` de verdade. `.text(...)` adiciona o prompt de instrução (pedindo a transcrição), e `.media(List.of(audioMedia))` anexa o áudio — essa combinação, em uma única mensagem, é exatamente o que caracteriza a multimodalidade explicada na seção 6.2. E `.media(...)` é sempre **opcional**: toda vez que você usou `chatClient.prompt().user(prompt)` nas Partes 4 e 5, o Spring AI montou uma `UserMessage` só com texto, sem nunca chamar `.media(...)` — a classe já vem preparada, de fábrica, para os dois cenários.
+- **`UserMessage.builder().text(TRANSCRIPTION_PROMPT).media(List.of(audioMedia)).build()`** — usa, mais uma vez, o **padrão Builder**, cuja regra geral de leitura (rastreando o que cada `.` devolve) já foi explicada em detalhe na Parte 3.4. Vale reforçar aqui, especificamente sobre `UserMessage`, porque este é o primeiro momento em que você vê o *builder* de fato combinando dois tipos de conteúdo diferentes (texto **e** mídia) na mesma cadeia.
+
+  > **`Builder` como classe aninhada, explicado do zero, agora com o exemplo específico de `UserMessage`.** Em Java, é possível declarar uma classe **inteira** dentro do corpo de outra classe — isso é chamado de **classe aninhada** (*nested class*). O código-fonte de `UserMessage`, dentro do `.jar` do Spring AI, tem uma estrutura parecida com esta (simplificada, só para ilustrar a ideia — não é o código-fonte exato e completo da biblioteca):
+  > ```java
+  > public class UserMessage {
+  >     private String text;
+  >     private List<Media> media;
+  >
+  >     // ... outros campos e métodos da UserMessage em si
+  >
+  >     public static class Builder {
+  >         private String text;
+  >         private List<Media> media;
+  >
+  >         public Builder text(String text) {
+  >             this.text = text;
+  >             return this;                 // devolve o próprio builder — permite continuar encadeando
+  >         }
+  >
+  >         public Builder media(List<Media> media) {
+  >             this.media = media;
+  >             return this;
+  >         }
+  >
+  >         public UserMessage build() {
+  >             // aqui, o Builder finalmente cria e devolve um UserMessage de verdade
+  >             return new UserMessage(this.text, this.media);
+  >         }
+  >     }
+  >
+  >     public static Builder builder() {
+  >         return new Builder();
+  >     }
+  > }
+  > ```
+  > `Builder`, aqui, é uma classe declarada **dentro** do corpo da classe `UserMessage` — por isso o nome completo dela é `UserMessage.Builder`, com um ponto separando o nome da classe externa do nome da classe interna. Esse ponto específico, no nome do tipo, **não** é uma chamada de método (diferente dos pontos na cadeia `.text(...).media(...)`) — é a sintaxe do Java para navegar até uma classe aninhada.
+  >
+  > Rastreando o que cada trecho da cadeia devolve, usando essa estrutura como referência:
+  >
+  > | Trecho | O que devolve |
+  > |---|---|
+  > | `UserMessage.builder()` | Chama o método estático `builder()` da classe externa `UserMessage`, que cria e devolve um `new Builder()` — o "montador" ainda vazio |
+  > | `.text(TRANSCRIPTION_PROMPT)` | Chama `text(...)`, um método que **mora na classe `Builder`** — guarda o texto em `this.text` e devolve `this` (o próprio `Builder`, agora com o texto preenchido) |
+  > | `.media(List.of(audioMedia))` | Chama `media(...)`, também um método da classe `Builder` — guarda a lista em `this.media` e devolve `this` de novo (o mesmo `Builder`, agora com texto **e** mídia preenchidos) |
+  > | `.build()` | Chama `build()`, o método que finalmente usa `this.text` e `this.media` acumulados para construir, com `new UserMessage(...)`, o objeto real e definitivo — não mais um `Builder` |
+  >
+  > Ou seja: `.text(...)` e `.media(...)` só podem ser chamados **enquanto você ainda está com o `Builder` em mãos** (antes de `.build()`) justamente porque são métodos que existem **na classe `Builder`**, não na classe `UserMessage` final — depois de `.build()`, o objeto que você tem em mãos é um `UserMessage` de verdade, e `UserMessage` não tem (nem precisa ter) métodos `.text(...)`/`.media(...)` para configurar mais nada, porque já está pronto e imutável.
+
+  E `.media(...)` é sempre **opcional**: toda vez que você usou `chatClient.prompt().user(prompt)` nas Partes 4 e 5, o Spring AI montou uma `UserMessage` só com texto, sem nunca chamar `.media(...)` — a classe já vem preparada, de fábrica, para os dois cenários. `.text(...)` adiciona o prompt de instrução (pedindo a transcrição), e `.media(List.of(audioMedia))` anexa o áudio — essa combinação, em uma única mensagem, é exatamente o que caracteriza a multimodalidade explicada na seção 6.2.
   - **`List.of(audioMedia)`** — cria uma **lista imutável** (não pode ter itens adicionados ou removidos depois de criada) contendo um único elemento, `audioMedia`. `List.of(...)` é um método de fábrica introduzido no Java moderno para criar listas pequenas e fixas de forma concisa, sem precisar instanciar explicitamente uma `ArrayList` e chamar `.add(...)` em seguida.
 - **`Prompt.builder().messages(List.of(userMessage)).build()`** — monta o `Prompt` final, contendo apenas essa única mensagem multimodal, usando o mesmo padrão Builder já visto (uma forma alternativa ao construtor `new Prompt(texto, options)` usado na Parte 3.4 — aqui, com uma lista de mensagens explícita, em vez de um texto simples).
 - **`chatModel.call(prompt).getResult().getOutput().getText()`** — a mesma cadeia de extração de texto já vista, em detalhe, na Parte 3.4. Repare que, do ponto de vista do código, **não há absolutamente nenhuma diferença estrutural** entre "responder normalmente a uma pergunta de texto" (Parte 3) e "transcrever um áudio" (aqui) — ambos são, para o Spring AI e para o Gemini, apenas "gerar texto a partir de uma mensagem de entrada". A única diferença está no **conteúdo** dessa mensagem de entrada (com ou sem `Media` anexada) e na instrução dada no prompt.
