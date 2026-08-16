@@ -472,7 +472,59 @@ Explicando cada peça, na ordem em que aparece no arquivo:
 - **`@SpringBootTest`** — sobe o contexto completo do Spring, incluindo a auto-configuração do starter do Gemini, que cria automaticamente o *bean* `GoogleGenAiChatModel`.
 - **`@EnabledIfEnvironmentVariable(named = "GEMINI_API_KEY", matches = ".+")`** — condiciona a execução do teste à existência da variável de ambiente `GEMINI_API_KEY` não vazia (`.+` = "um ou mais caracteres quaisquer"). Sem ela, o JUnit **pula** o teste (não falha).
 - **`@Autowired GoogleGenAiChatModel chatModel;`** — injeção de dependência por campo: o Spring localiza, no contexto já montado, um *bean* do tipo `GoogleGenAiChatModel` e o atribui a este campo automaticamente.
-- **`GoogleGenAiChatOptions.builder()...build()`** — o **padrão Builder**: em vez de um construtor gigante com muitos parâmetros, a classe expõe métodos encadeáveis (`.model(...)`, `.temperature(...)`, `.responseMimeType(...)`), finalizados por `.build()`.
+- **`GoogleGenAiChatOptions.builder()...build()`** — a primeira aparição, neste tutorial, do **padrão Builder**. Como esse padrão vai reaparecer dezenas de vezes no resto do projeto (`Prompt.builder()`, `UserMessage.builder()`, `ChatClient.builder(...)`, `Client.builder()`, e outros), vale entender agora, com calma e em detalhe, **como ler qualquer cadeia de pontos** — não só decorar que "é um Builder".
+
+  > **A regra geral para ler qualquer cadeia de `.` (pontos), explicada do zero.** Cada `.` (ponto) significa: **"pegue o que o pedaço à esquerda devolveu, e chame um método sobre ele"**. Uma cadeia de pontos é uma sequência de **chamadas de método encadeadas**, em que o **valor de retorno** de cada chamada vira o **objeto sobre o qual a próxima chamada acontece**. A chave para entender qualquer cadeia é perguntar, a cada ponto: *"o que o pedaço à esquerda deste ponto devolveu?"* — é esse tipo devolvido que determina quais métodos você pode chamar em seguida.
+  >
+  > **Decompondo `GoogleGenAiChatOptions.builder().model(...).temperature(...).responseMimeType(...).build()`, passo a passo, rastreando o tipo devolvido em cada trecho:**
+  >
+  > | Trecho | O que devolve |
+  > |---|---|
+  > | `GoogleGenAiChatOptions.builder()` | Um objeto `GoogleGenAiChatOptions.Builder` — o "montador" ainda vazio |
+  > | `.model("gemini-3-flash-preview")` | O **mesmo** `GoogleGenAiChatOptions.Builder`, agora já com o modelo guardado internamente |
+  > | `.temperature(1.0)` | O **mesmo** `Builder` de novo, agora também com a temperatura guardada |
+  > | `.responseMimeType("text/plain")` | O **mesmo** `Builder`, com os três valores já acumulados |
+  > | `.build()` | **Não** mais o `Builder` — finalmente, um objeto `GoogleGenAiChatOptions` de verdade, pronto e imutável |
+  >
+  > Repare no padrão: cada método de configuração (`.model(...)`, `.temperature(...)`, `.responseMimeType(...)`) devolve **o próprio `Builder`**, o que é exatamente o que permite continuar encadeando mais chamadas — e só o último método, `.build()`, "quebra" esse padrão, entregando o objeto final e real.
+  >
+  > **De onde vem essa capacidade de encadear — o que existe, estruturalmente, por trás disso?** `Builder`, aqui, é uma **classe aninhada** (*nested class* — uma classe inteira declarada dentro do corpo de outra classe), pertencente à classe `GoogleGenAiChatOptions`. É por isso que o nome completo dela é `GoogleGenAiChatOptions.Builder`, com um ponto separando o nome da classe externa do nome da classe interna — esse ponto específico **não** é uma chamada de método, é a sintaxe do Java para navegar até uma classe aninhada. Uma estrutura simplificada (só para ilustrar a ideia, não o código-fonte exato da biblioteca) seria:
+  > ```java
+  > public class GoogleGenAiChatOptions {
+  >     private String model;
+  >     private Double temperature;
+  >     // ... outros campos
+  >
+  >     public static class Builder {
+  >         private String model;
+  >         private Double temperature;
+  >
+  >         public Builder model(String model) {
+  >             this.model = model;
+  >             return this;              // devolve o próprio builder — permite continuar encadeando
+  >         }
+  >
+  >         public Builder temperature(Double temperature) {
+  >             this.temperature = temperature;
+  >             return this;
+  >         }
+  >
+  >         public GoogleGenAiChatOptions build() {
+  >             return new GoogleGenAiChatOptions(this.model, this.temperature, ...);
+  >         }
+  >     }
+  >
+  >     public static Builder builder() {
+  >         return new Builder();
+  >     }
+  > }
+  > ```
+  > Ou seja: `.model(...)` e `.temperature(...)` são métodos que **moram na classe `Builder`**, não na classe `GoogleGenAiChatOptions` — por isso só podem ser chamados **antes** de `.build()`, enquanto você ainda está com o "montador" em mãos, nunca depois.
+  >
+  > **Por que projetar assim, em vez de um construtor comum (`new GoogleGenAiChatOptions(modelo, temperatura, formato, ...)`)?** Porque, com um construtor comum, **todos** os parâmetros precisariam ser passados de uma vez, na ordem certa — inclusive os que você não quer configurar (seria preciso passar valores de preenchimento, tipo `null`, para cada opção não usada). Com o *builder*, você só chama os métodos de configuração que precisa, na ordem que quiser, e o *builder* cuida de montar o objeto final corretamente, com valores padrão sensatos para o que não foi explicitamente configurado.
+  >
+  > **Um contraste útil, para não confundir com outra cadeia que você já viu:** nem toda cadeia de pontos é um Builder. Compare com `chatClient.prompt().user(prompt).call().content()` (Parte 4.2) — ali, cada ponto muda de **tipo de objeto completamente** a cada passo (de uma requisição em construção, para uma resposta, para finalmente uma `String`), em vez de "acumular configuração" sobre o mesmo tipo `Builder` repetidamente. A regra geral de leitura ("o que este pedaço devolve, para eu saber o que posso chamar depois do próximo ponto?") continua a mesma nos dois casos — só muda **qual tipo específico** está sendo devolvido a cada passo da cadeia.
+
   - **`.model(...)`** e **`.temperature(1.0)`** — sobrescrevem, só para esta chamada, os valores globais do `application.properties` (a temperatura sobe para `1.0` porque este teste pede à IA para **inventar** um exemplo, e alguma criatividade é aceitável aqui).
   - **`.responseMimeType("text/plain")`** — pede resposta em texto plano.
 - **`new Prompt(texto, options)`** — um construtor de `Prompt` que recebe diretamente uma `String` (convertida automaticamente em `UserMessage`) e as opções.
@@ -1056,7 +1108,7 @@ chatModel.call(prompt).getResult().getOutput().getText();
   > **O que é um "tipo MIME", explicado do zero?** MIME (*Multipurpose Internet Mail Extensions*) é um padrão para identificar o **formato/tipo de um arquivo** através de uma string curta e padronizada, no formato `tipo/subtipo` — por exemplo, `text/plain` (texto puro, já visto na Parte 3.4), `application/json` (dados JSON), ou, aqui, `audio/mpeg` (áudio no formato MP3). Esse identificador é usado tanto em requisições/respostas HTTP quanto, como neste caso, para informar a uma IA multimodal **como interpretar** um bloco de bytes anexado — sem essa informação, o Gemini não saberia se aqueles bytes representam um áudio, uma imagem, ou outra coisa.
   - **`MimeTypeUtils.parseMimeType("audio/mpeg")`** — um método utilitário do Spring que converte a `String` `"audio/mpeg"` em um objeto `MimeType` estruturado, validando que o formato é reconhecível.
   - **`file.getResource()`** — converte o `MultipartFile` (explicado na seção 6.6) — o arquivo recebido dentro da requisição HTTP — para um `Resource`, o tipo esperado pelo construtor de `Media`.
-- **`UserMessage.builder().text(TRANSCRIPTION_PROMPT).media(List.of(audioMedia)).build()`** — usa, mais uma vez, o **padrão Builder** (Parte 3.4) para montar uma `UserMessage` que combina **dois tipos de conteúdo em uma única mensagem**: `.text(...)` adiciona o prompt de instrução (pedindo a transcrição), e `.media(List.of(audioMedia))` anexa o áudio — essa combinação, em uma única mensagem, é exatamente o que caracteriza a multimodalidade explicada na seção 6.2.
+- **`UserMessage.builder().text(TRANSCRIPTION_PROMPT).media(List.of(audioMedia)).build()`** — usa, mais uma vez, o **padrão Builder**, já explicado passo a passo (rastreando o que cada `.` devolve, e por que `Builder` é uma classe aninhada dentro da classe principal) na Parte 3.4. Vale só reforçar aqui: `.text(...)` e `.media(...)` são métodos que moram na classe `UserMessage.Builder` (não em `UserMessage` diretamente), e ambos devolvem o próprio `Builder` — é por isso que dá para encadear os dois, um depois do outro, antes do `.build()` final devolver o `UserMessage` de verdade. `.text(...)` adiciona o prompt de instrução (pedindo a transcrição), e `.media(List.of(audioMedia))` anexa o áudio — essa combinação, em uma única mensagem, é exatamente o que caracteriza a multimodalidade explicada na seção 6.2. E `.media(...)` é sempre **opcional**: toda vez que você usou `chatClient.prompt().user(prompt)` nas Partes 4 e 5, o Spring AI montou uma `UserMessage` só com texto, sem nunca chamar `.media(...)` — a classe já vem preparada, de fábrica, para os dois cenários.
   - **`List.of(audioMedia)`** — cria uma **lista imutável** (não pode ter itens adicionados ou removidos depois de criada) contendo um único elemento, `audioMedia`. `List.of(...)` é um método de fábrica introduzido no Java moderno para criar listas pequenas e fixas de forma concisa, sem precisar instanciar explicitamente uma `ArrayList` e chamar `.add(...)` em seguida.
 - **`Prompt.builder().messages(List.of(userMessage)).build()`** — monta o `Prompt` final, contendo apenas essa única mensagem multimodal, usando o mesmo padrão Builder já visto (uma forma alternativa ao construtor `new Prompt(texto, options)` usado na Parte 3.4 — aqui, com uma lista de mensagens explícita, em vez de um texto simples).
 - **`chatModel.call(prompt).getResult().getOutput().getText()`** — a mesma cadeia de extração de texto já vista, em detalhe, na Parte 3.4. Repare que, do ponto de vista do código, **não há absolutamente nenhuma diferença estrutural** entre "responder normalmente a uma pergunta de texto" (Parte 3) e "transcrever um áudio" (aqui) — ambos são, para o Spring AI e para o Gemini, apenas "gerar texto a partir de uma mensagem de entrada". A única diferença está no **conteúdo** dessa mensagem de entrada (com ou sem `Media` anexada) e na instrução dada no prompt.

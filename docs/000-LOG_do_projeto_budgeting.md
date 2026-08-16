@@ -414,3 +414,39 @@ Sem execução de código nesta sessão — trabalho de preparação do material
 **Próximo passo planejado:** executar a Parte 6 no projeto real — gravar os seis áudios de teste, criar `GeminiTranscriptionModelIT.java` (ajustando os valores esperados do `@CsvSource` às gravações reais) e `TranscriptionController.java`.
 
 ---
+
+## 📝 LOG DE EXECUÇÃO — DIA 05
+
+**Data:** 16/08/2026 (continuação da mesma sessão do DIA 04)
+**Contexto:** Sessão de perguntas conceituais, sem execução de código, aprofundando o entendimento de mecanismos de linguagem Java que apareceram na Parte 6 e que são transversais a todo o projeto. Consolidada como atualização do tutorial, por serem lacunas genuínas de compreensão que "copiar e colar" não preenchia.
+
+---
+
+## 10. 🧠 Discussão conceitual — encadeamento de métodos (`.`) e o padrão Builder, em profundidade
+
+A partir de dúvidas sobre o trecho `UserMessage.builder().text(TRANSCRIPTION_PROMPT).media(List.of(audioMedia)).build()` (Parte 6), foram esclarecidos, em sequência:
+
+1. **`@Test` (JUnit)** — o que a anotação faz mecanicamente: marca um método para ser localizado, instanciado (uma instância nova por teste) e executado automaticamente pelo JUnit, sem chamada manual; o resultado (passou/falhou) depende de nenhuma exceção ter sido lançada, incluindo as lançadas por asserções do AssertJ quando não satisfeitas.
+2. **Escopo de `.defaultTools(...)`** — confirmado que a *tool* fica disponível apenas para a instância local de `ChatClient` construída naquele método específico, não para "a classe `ChatClient`" de forma geral — cada `ChatClient.Builder` é uma instância nova e isolada (reforçando o conceito de escopo `prototype`, já visto na Parte 4).
+3. **Se `UserMessage` já vem preparada para receber `.media(...)` opcionalmente** — confirmado que sim: o método já existe pronto no `.jar` do Spring AI, é opcional, e seu uso é o que viabiliza a multimodalidade (Parte 6.2).
+4. **Como entender uma cadeia de `.` (pontos), de forma geral** — o núcleo da discussão. Estabelecida a regra geral ("cada ponto opera sobre o que o pedaço anterior devolveu") e decomposto, passo a passo, o tipo devolvido em cada trecho de `GoogleGenAiChatOptions.builder().model(...).temperature(...).responseMimeType(...).build()`.
+5. **A quem pertence um método como `.text(...)`** — esclarecido que métodos de configuração do Builder (`.text(...)`, `.model(...)`, `.temperature(...)`) pertencem à classe `X.Builder`, não à classe `X` final — e por quê (só é possível chamá-los **antes** de `.build()`).
+6. **`UserMessage.Builder` como classe aninhada** — confirmado que `Builder` é uma classe declarada **dentro** do corpo da classe `UserMessage` (uma *nested class*), com uma estrutura interna ilustrada (campos, métodos que devolvem `this`, e o método `build()` que finalmente monta o objeto real).
+
+### 10.1. 📚 Atualização aplicada ao tutorial
+
+A explicação completa foi incorporada ao `000-Tutorial_Budgeting_Spring_AI_COMPLETO.md`, na **Parte 3.4** (primeira aparição do padrão Builder no tutorial, com `GoogleGenAiChatOptions.builder()`), incluindo:
+
+- A regra geral de leitura de cadeias de método (`.`).
+- Uma tabela rastreando o tipo devolvido em cada trecho da cadeia `GoogleGenAiChatOptions.builder()...build()`.
+- Uma estrutura de código ilustrativa mostrando `Builder` como classe aninhada, com métodos devolvendo `this` e `.build()` finalizando a construção.
+- O motivo de projetar assim em vez de um construtor comum (evitar passar todos os parâmetros de uma vez, inclusive os não usados).
+- Um contraste explícito com uma cadeia **não-Builder** já vista (`chatClient.prompt().user(prompt).call().content()`, Parte 4.2), reforçando que a regra de leitura é a mesma, mas o tipo devolvido a cada passo muda de forma diferente.
+
+Na **Parte 6.4**, o trecho sobre `UserMessage.builder()...build()` foi ajustado para referenciar essa explicação completa (em vez de duplicá-la), com uma nota adicional específica sobre `.text(...)`/`.media(...)` pertencerem à classe `UserMessage.Builder`.
+
+**Lição registrada:** esta foi uma boa demonstração prática do próprio princípio discutido no primeiro dia do tutorial (ver "Discussão sobre nível de profundidade x caixas-pretas") — o padrão Builder havia sido tratado, até aqui, como algo a "aceitar e seguir em frente" (Nível 2/3 daquela conversa). Ao ser questionado com atenção, revelou-se um dos poucos conceitos verdadeiramente **transversais** ao projeto inteiro (reaparece em praticamente toda Parte restante do tutorial), justificando o investimento de reclassificá-lo para Nível 1 e documentá-lo em profundidade, de uma vez, no ponto de primeira aparição.
+
+**Próximo passo:** nenhuma mudança no cronograma de implementação — o próximo passo prático continua sendo a execução da Parte 6 (gravação dos áudios, criação de `GeminiTranscriptionModelIT.java` e `TranscriptionController.java`), como registrado no DIA 04.
+
+---
