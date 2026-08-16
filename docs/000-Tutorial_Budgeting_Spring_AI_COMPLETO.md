@@ -948,6 +948,7 @@ Explicando as partes que **não** apareceram ainda nas Partes 3 e 4:
 Confirmado: `ToolCallingIT.java` existe em `dio.budgeting`, com a classe interna `MathTools` (contendo os métodos `sum` e `diff`, anotados com `@Tool`) e o método de teste `should_executeSum_when_prompted`, usando `GoogleGenAiChatModel` e `.defaultTools(...)`.
 
 **Recapitulando:** este teste é, propositalmente, um "protótipo conceitual" simples e didático — soma e subtração de inteiros, sem nenhuma relação direta com o domínio de negócio do projeto (transações financeiras). É exatamente esse mesmo padrão — um método anotado com `@Tool`, registrado via `.defaultTools(...)` — que será aplicado, a partir da Parte 8, aos casos de uso **reais** do domínio: `PersistTransactionUseCase.execute(...)` e `ListTransactionsByCategoryUseCase.execute(...)`. Se o padrão desta Parte 5 ficou claro, o Tool Calling "de verdade" nas próximas partes será apenas uma aplicação do mesmo mecanismo a um problema mais interessante.
+
 ---
 
 ## Parte 6 — Transcrevendo áudio em texto: o primeiro ponto sem equivalente Gemini (Vídeo 06)
