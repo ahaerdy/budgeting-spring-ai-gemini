@@ -734,11 +734,13 @@ Refere-se ao mecanismo que **cria o *bean* `GoogleGenAiChatModel`**, explicado e
 2. As propriedades (`spring.ai.google.genai.api-key`, `.chat.options.model`, `.chat.options.temperature`) estão no `application.properties` desde as Partes 1.7 e 3.3.
 3. Quando a aplicação sobe, o **código de auto-configuração** — que vive dentro do `.jar` `spring-ai-autoconfigure-model-google-genai-2.0.0.jar` — lê essas duas fontes automaticamente e **monta o *bean* `GoogleGenAiChatModel`**, já configurado com a chave, o modelo e a temperatura, sem que você escreva `new GoogleGenAiChatModel(...)` em lugar nenhum.
 
-É **esse** *bean* já pronto — resultado dessa auto-configuração — que o `ChatClient` **reaproveita**, em vez de recriar do zero. Prova concreta disso: quando a chave `GEMINI_API_KEY` foi corrigida na Parte 3, isso resolveu **os dois** endpoints (`/api/chat-model` e `/api/chat`) na mesma correção — porque, por baixo, ambos dependem do mesmo `GoogleGenAiChatModel` único.
+**Importante deixar claro o momento em que isso acontece:** essa auto-configuração roda **uma única vez**, quando a aplicação sobe (`@SpringBootTest`, no caso dos testes). O `chatModel` chega **já pronto** a qualquer lugar que o peça — inclusive a `ChatClient.builder(chatModel)`, que **não** aciona nenhuma configuração nova: apenas recebe esse objeto já existente como parâmetro e o guarda, para usar mais tarde quando `.build()` for chamado. `ChatClient.builder(...)` embrulha um objeto pronto; não constrói nada do zero.
+
+Prova concreta de que os dois caminhos (`ChatModel` e `ChatClient`) dependem do mesmo `GoogleGenAiChatModel` único: quando a chave `GEMINI_API_KEY` foi corrigida na Parte 3, isso resolveu **os dois** endpoints (`/api/chat-model` e `/api/chat`) na mesma correção.
 
 ### A diferença central: expressividade da API
 
-Com o `ChatModel` puro, para configurar algo além do texto simples, era preciso montar manualmente objetos como `Prompt` e `GoogleGenAiChatOptions`. Com o `ChatClient`, existe uma **API fluente** dedicada — métodos encadeados que leem quase como uma frase — especificamente pensada para compor uma conversa com IA, incluindo: uma **mensagem de sistema** (instruções do desenvolvedor, moldando o comportamento geral do assistente), uma ou mais **mensagens de usuário** (a entrada real de quem conversa), e, como visto na Parte 5, **ferramentas** (*tools*) que o modelo pode decidir chamar.
+Com o `ChatModel` puro, para configurar algo além do texto simples, era preciso montar manualmente objetos como `Prompt` e `GoogleGenAiChatOptions`. Com o `ChatClient`, existe uma **API fluente** dedicada — métodos encadeados que leem quase como uma frase — especificamente pensada para compor uma conversa com IA, incluindo: uma **mensagem de sistema** (instruções do desenvolvedor, moldando o comportamento geral do assistente), uma ou mais **mensagens de usuário** (a entrada real de quem conversa), e, como visto na Parte 5, **ferramentas** (*tools*) que o modelo pode decidir chamar. Essa simplificação acontece em **três frentes diferentes**, não só na montagem do prompt — a tabela mais adiante deixa isso explícito.
 
 ### A mesma operação, dois níveis de abstração
 
@@ -784,11 +786,60 @@ String texto = chatClient
 | Como define comportamento persistente ("aja como X") | Não existe — teria que reconstruir o `Prompt` inteiro, com uma `SystemMessage`, em **toda** chamada | `.defaultSystem(...)`, configurado **uma vez** no *builder*, vale para todas as chamadas seguintes |
 | Como monta a mensagem | `new Prompt(texto, options)` — um construtor genérico | `.prompt("texto")` — já trata a `String` como `UserMessage` automaticamente |
 | Como extrai o texto da resposta | `response.getResult().getOutput().getText()` — 3 chamadas encadeadas, navegando a estrutura de `ChatResponse` | `.content()` — 1 chamada, já devolve a `String` pronta |
-| O que está "por trás", de fato executando a chamada de rede | O próprio `GoogleGenAiChatModel` (injetado direto) | O **mesmo** `GoogleGenAiChatModel` (obtido através de `ChatClient.builder(chatModel)`) |
+| O que está "por trás", de fato executando a chamada de rede | O próprio `GoogleGenAiChatModel` (injetado direto) | O **mesmo** `GoogleGenAiChatModel` (obtido através de `ChatClient.builder(chatModel)`, já pronto, sem reconfiguração) |
 | Quem criou esse `GoogleGenAiChatModel` | A auto-configuração da Parte 3.3, a partir do `build.gradle` + `application.properties` | A **mesma** auto-configuração — nenhuma configuração nova, nenhuma chave nova |
+
+### O que significa "comportamento persistente", explicado do zero
+
+Este é o item da tabela que merece mais atenção, porque não é apenas "sintaxe mais curta" — é uma **capacidade que o `ChatModel` puro simplesmente não tem**.
+
+**"Persistente" aqui não tem nenhuma relação com banco de dados ou arquivo salvo em disco.** Significa: uma configuração que fica **guardada dentro do próprio objeto `ChatClient`**, e que se aplica **automaticamente a toda chamada futura** feita através dele — sem precisar ser reescrita a cada vez.
+
+**Onde essa configuração fica guardada, mecanicamente:** quando você chama `.defaultSystem("Voce é um matematico")` durante a construção (`ChatClient.builder(chatModel).defaultSystem(...).build()`), esse texto é armazenado como parte da configuração interna **do próprio `ChatClient` resultante** — não do `chatModel` (que continua genérico, sem saber nada sobre "ser um matemático"). Cada vez que você chama `chatClient.prompt(...)` depois disso, o Spring AI monta a requisição **já partindo dessa configuração padrão**, adicionando por cima só a mensagem de usuário nova — sem que você precise informar de novo "aja como um matemático" a cada chamada.
+
+**Contraste concreto — duas chamadas ao mesmo `ChatClient`, com e sem repetir a configuração:**
+
+```java
+var chatClient = ChatClient.builder(chatModel)
+        .defaultSystem("Voce é um matematico")
+        .build();
+
+// Primeira pergunta — nenhuma menção ao "papel" do modelo é necessária aqui
+String resposta1 = chatClient.prompt("Quanto é 7 vezes 8?").call().content();
+
+// Segunda pergunta — o ChatClient "lembra" que deve continuar agindo como matemático,
+// mesmo sem você repetir isso
+String resposta2 = chatClient.prompt("E a raiz quadrada de 144?").call().content();
+```
+
+Em nenhuma das duas chamadas você precisou escrever de novo `"Voce é um matematico"` — essa instrução **persiste** durante toda a vida útil daquele `chatClient`, configurada uma única vez, na construção.
+
+**O que seria necessário para reproduzir esse mesmo comportamento usando só `ChatModel` puro**, para deixar o contraste explícito:
+
+```java
+// Primeira pergunta — a mensagem de sistema precisa ser incluída manualmente
+var prompt1 = new Prompt(List.of(
+        new SystemMessage("Voce é um matematico"),
+        new UserMessage("Quanto é 7 vezes 8?")
+));
+String resposta1 = chatModel.call(prompt1).getResult().getOutput().getText();
+
+// Segunda pergunta — a MESMA mensagem de sistema precisa ser repetida de novo,
+// porque cada Prompt é um objeto novo e independente, sem nenhuma "memória"
+// de configuração entre uma chamada e outra
+var prompt2 = new Prompt(List.of(
+        new SystemMessage("Voce é um matematico"),
+        new UserMessage("E a raiz quadrada de 144?")
+));
+String resposta2 = chatModel.call(prompt2).getResult().getOutput().getText();
+```
+
+**A diferença estrutural, resumida:** com `ChatModel`, cada `Prompt` é um pacote **autocontido e independente** — ele não "lembra" de nada da chamada anterior, e qualquer instrução de comportamento precisa ser incluída, por completo, todas as vezes. Com `ChatClient`, a configuração feita no momento da construção (`.defaultSystem(...)`, e, como visto na Parte 5, também `.defaultTools(...)`) fica **associada ao objeto `chatClient` em si**, e é reaplicada automaticamente a cada nova chamada, até que esse objeto deixe de existir.
+
+**Por que isso importa de verdade para o projeto, e não é só conveniência de escrita:** é exatamente esse mecanismo que sustenta o assistente financeiro da Parte 11. O `TranscriptionController` monta **um único** `ChatClient`, uma única vez, no construtor, com o prompt de sistema (`"Você é um assistente financeiro..."`, vindo de `system-message.st`) e as duas *tools* de negócio (`persistTransaction`, `listTransactionsByCategory`) já configuradas ali. A partir daí, **toda** requisição de áudio que chega em `/api/ai` — sejam dez, sejam mil — reaproveita esse mesmo `chatClient` já pronto, sem precisar reconstruir o prompt de sistema nem registrar as *tools* de novo a cada chamada. Se o projeto usasse `ChatModel` puro, cada requisição teria que remontar manualmente a mensagem de sistema inteira e a lista de *tools* disponíveis, a cada nova chamada — um desperdício de código repetitivo que o `ChatClient` elimina de raiz.
 
 ### O que essa comparação deixa explícito
 
-- **A última linha da tabela é a prova da frase original**: as duas colunas convergem no mesmo objeto (`GoogleGenAiChatModel`), criado pela mesma auto-configuração — o `ChatClient` não é uma segunda conexão com o Gemini, é uma **camada de conveniência** sobre a primeira.
+- **A linha "por trás" da tabela é a prova da frase original**: as duas colunas convergem no mesmo objeto (`GoogleGenAiChatModel`), criado pela mesma auto-configuração — o `ChatClient` não é uma segunda conexão com o Gemini, é uma **camada de conveniência** sobre a primeira.
 - **O que o `ChatClient` "corta" não é a conexão em si, é o trabalho manual de montar/desmontar objetos** a cada chamada — `GoogleGenAiChatOptions.builder()...build()` (configuração), `new Prompt(...)` (montagem), `getResult().getOutput().getText()` (extração) somem, substituídos por uma cadeia fluente de 3 métodos (`.prompt().call().content()`).
-- **`.defaultSystem(...)` é o ganho mais estrutural**, não só sintático: com `ChatModel` puro, "o modelo deve se comportar como X" precisaria ser reconstruído a cada `Prompt` novo; com `ChatClient`, é configurado uma vez, no momento da construção, e persiste — a mesma lógica que sustenta, mais adiante, o prompt de sistema do assistente financeiro na Parte 11.
+- **`.defaultSystem(...)` é o ganho mais estrutural, não só sintático**: é a diferença entre um objeto "sem memória de configuração" (`ChatModel`, onde cada `Prompt` é isolado) e um objeto que **carrega configuração persistente entre chamadas** (`ChatClient`) — o mecanismo que torna viável, na prática, um assistente com comportamento consistente ao longo de várias interações, sem repetição de código.
