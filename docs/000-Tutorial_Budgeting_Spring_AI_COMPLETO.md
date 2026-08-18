@@ -336,6 +336,48 @@ E, no `-classpath` impresso pelo IntelliJ, confira que aparecem `.jar`s como `sp
 
 **Recapitulando:** temos um projeto Spring Boot mínimo, capaz de subir sozinho, com a *dependência* de IA já resolvida e a *chave de autenticação* já configurada — mas ainda **nenhuma linha de código nossa** usa efetivamente o Gemini. É exatamente isso que a Parte 3 resolve.
 
+### Resultado da execução de `BudgetingApplicationTests`
+
+```log
+Starting Gradle Daemon...
+Gradle Daemon started in 2 s 120 ms
+> Task :compileJava UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :compileTestJava UP-TO-DATE
+> Task :processTestResources UP-TO-DATE
+> Task :testClasses UP-TO-DATE
+14:56:52.604 [Test worker] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [dio.budgeting.BudgetingApplicationTests]: BudgetingApplicationTests does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+14:56:52.791 [Test worker] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration dio.budgeting.BudgetingApplication for test class dio.budgeting.BudgetingApplicationTests
+14:56:52.894 [Test worker] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [dio.budgeting.BudgetingApplicationTests]: BudgetingApplicationTests does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+14:56:52.896 [Test worker] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration dio.budgeting.BudgetingApplication for test class dio.budgeting.BudgetingApplicationTests
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.1.0)
+
+2026-08-17T14:56:53.246-03:00  INFO 108691 --- [budgeting] [    Test worker] d.budgeting.BudgetingApplicationTests    : Starting BudgetingApplicationTests using Java 21.0.11 with PID 108691 (started by arthur in /mnt/storage_02/Backup_USB2/Backup_Github/budgeting-spring-ai-gemini/budgeting)
+2026-08-17T14:56:53.248-03:00  INFO 108691 --- [budgeting] [    Test worker] d.budgeting.BudgetingApplicationTests    : No active profile set, falling back to 1 default profile: "default"
+2026-08-17T14:56:54.335-03:00 DEBUG 108691 --- [budgeting] [    Test worker] o.s.a.m.t.a.ToolCallingAutoConfiguration : Cannot load class: org.springframework.security.oauth2.client.ClientAuthorizationException
+2026-08-17T14:56:54.937-03:00  INFO 108691 --- [budgeting] [    Test worker] d.budgeting.BudgetingApplicationTests    : Started BudgetingApplicationTests in 1.954 seconds (process running for 3.561)
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
+WARNING: A Java agent has been loaded dynamically (/home/arthur/.gradle/caches/modules-2/files-2.1/net.bytebuddy/byte-buddy-agent/1.18.10/9426d28828bdcdf42666bb7a68c468279ea78f59/byte-buddy-agent-1.18.10.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+> Task :test
+BUILD SUCCESSFUL in 17s
+5 actionable tasks: 1 executed, 4 up-to-date
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.5.1/userguide/configuration_cache_enabling.html
+14:56:56: Execution finished ':test --tests "dio.budgeting.BudgetingApplicationTests"'.
+```
+
 
 ---
 

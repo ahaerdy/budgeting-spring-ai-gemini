@@ -4,6 +4,8 @@
 **Data:** 12/08/2026
 **Contexto:** Transição da stack original do curso DIO/NTT Data (Spring Boot + Spring AI + OpenAI) para uma versão adaptada 100% nativa em **Google Gemini**.
 
+> **Nota sobre o campo "Marca de confiança" (introduzido em 17/08/2026):** a partir desta atualização, cada checkpoint de Parte passa a ter, além do ✅ de execução (criado/rodado/passando), uma segunda marca — **alta / média / baixa** — sobre o quanto Arthur sente que entendeu o *porquê* daquela Parte, não só o *que* foi feito. É palpite rápido, não teste formal; não deve travar o ritmo de execução. Checkpoints já fechados antes desta data (Partes 1 a 6) ficam marcados como **não avaliado retroativamente** — preencher de memória geraria dado artificial (ver `05-avaliacao_dev_java.md`, entrada de 20260816, 1ª sessão). A partir da Parte 7 em diante, preencher no momento em que cada checkpoint fechar.
+
 ---
 
 ## 1. 🎯 Definição da Estrutura do Repositório (GitHub)
@@ -172,6 +174,8 @@ Process finished with exit code 0
 | `application.properties` com `spring.ai.google.genai.api-key` (prefixo correto) | ✅ |
 | `BudgetingApplicationTests.contextLoads()` | pendente de execução explícita |
 
+**Marca de confiança:** Média (7/10). Ver `001-Detalhamento_Tecnico_do_Projeto.md` (Partes 1 e 2) — o detalhamento técnico linha a linha, produzido antes desta marca, é a razão registrada do valor: sem ele, a marca teria sido Baixa (abaixo de 5/10), segundo estimativa do próprio Arthur.
+
 **Próximo passo planejado:** Parte 3 do tutorial (Vídeo 03) — adicionar `spring-boot-starter-web`, configurar `spring.ai.google.genai.chat.options.model` e `temperature`, criar o teste de integração `GeminiChatModelIT` e o `ChatModelController` com o endpoint `GET /api/chat-model`.
 
 ---
@@ -267,6 +271,8 @@ Olá! Tudo bem? Como posso te ajudar hoje?
 | `GeminiChatModelIT` — criado, rodado e passando | ✅ |
 | `ChatModelController` — criado, endpoint `GET /api/chat-model` respondendo corretamente | ✅ |
 
+**Marca de confiança:** Média (7/10). Ver `001-Detalhamento_Tecnico_do_Projeto.md` (Parte 3) — mesma razão registrada da marca acima: sem o detalhamento produzido antes desta avaliação, a marca teria sido Baixa (abaixo de 5/10).
+
 **Próximo passo planejado:** Parte 4 do tutorial (Vídeo 04) — trocar o `ChatModel` de baixo nível pelo `ChatClient` fluente: criar `GeminiChatClientIT.java` (teste) e `ChatClientController.java` (endpoint `GET /api/chat`), ambos sem exigir nenhuma dependência ou propriedade nova.
 
 ---
@@ -314,6 +320,8 @@ Resposta corretamente formatada em markdown (negrito no resultado) — comportam
 | `ChatClientController` — criado, endpoint `GET /api/chat` respondendo corretamente | ✅ |
 | Rotas `/api/chat-model` (Parte 3) e `/api/chat` (Parte 4) coexistindo sem conflito | ✅ |
 
+**Marca de confiança:** não avaliado retroativamente (checkpoint anterior à introdução do campo, 17/08/2026)
+
 ---
 
 ## 6. 🧠 Discussão conceitual — ChatModel vs. ChatClient, abstração de provedor, e convenção de nomenclatura
@@ -354,6 +362,8 @@ Confirmado via saída do `System.out.println(response)` (`0`) e `BUILD SUCCESSFU
 | Item | Status |
 | --- | --- |
 | `ToolCallingIT` — criado, rodado e passando | ✅ |
+
+**Marca de confiança:** não avaliado retroativamente (checkpoint anterior à introdução do campo, 17/08/2026)
 
 **Próximo passo planejado:** Parte 6 do tutorial (Vídeo 06) — primeiro ponto de divergência real com o curso original (transcrição de áudio, sem `TranscriptionModel` disponível para Gemini): gravar os seis áudios de teste próprios, criar `GeminiTranscriptionModelIT.java` e a primeira versão de `TranscriptionController.java` (apenas o método `transcribe`, expandido depois na Parte 11).
 
@@ -399,6 +409,8 @@ DefaultToolCallResultConverter : Converting tool result to JSON.
 | --- | --- |
 | `ToolCallingIT` — criado, rodado e passando | ✅ |
 | Tool Calling confirmado via logs (`DefaultToolCallingManager`, `MethodToolCallback`) para **ambas** as ferramentas, em sequência correta | ✅ |
+
+**Marca de confiança:** não avaliado retroativamente (checkpoint anterior à introdução do campo, 17/08/2026)
 
 ---
 
@@ -529,6 +541,8 @@ Transcrição correta e fiel ao áudio original.
 | `GeminiTranscriptionModelIT` — criado, rodado; 2 falhas iniciais diagnosticadas como diferença de formato (não bug), `@CsvSource` corrigido | ✅ |
 | `TranscriptionController` (versão inicial) — criado, endpoint `POST /api/transcribe` confirmado funcionando via `curl`, transcrição correta | ✅ |
 
+**Marca de confiança:** não avaliado retroativamente (checkpoint anterior à introdução do campo, 17/08/2026) — nota de contexto, não de valor: esta Parte foi executada na sequência imediata da discussão conceitual sobre o padrão Builder (seção 10, mesmo dia), o que pode ter elevado a confiança real no momento, mas isso não é preenchido aqui como suposição
+
 ### 11.6. 📚 Atualizações aplicadas ao tutorial, a partir desta execução
 
 Incorporadas ao `000-Tutorial_Budgeting_Spring_AI_COMPLETO.md`, Parte 6:
@@ -539,5 +553,21 @@ Incorporadas ao `000-Tutorial_Budgeting_Spring_AI_COMPLETO.md`, Parte 6:
 - **Seção 6.7 (Passo 3):** expandida a nota sobre o `curl`, incluindo o erro `curl: (26)` (causa: diretório de execução incorreto) e a dica sobre colagem de comandos multi-linha em alguns shells.
 
 **Próximo passo planejado:** Parte 7 do tutorial (Vídeo 07) — o segundo e último ponto sem equivalente Gemini no Spring AI (síntese de voz/TTS), usando o SDK nativo do Google GenAI diretamente. Ainda não reescrita no formato de receita explícita.
+
+---
+
+## 📝 LOG DE EXECUÇÃO — DIA 06 (template — preencher ao fechar a Parte 7)
+
+**Data:** _(preencher)_
+
+### Checkpoint da Parte 7 — _(status)_
+
+| Item | Status |
+| --- | --- |
+| _(preencher conforme os itens da Parte 7)_ | |
+
+**Marca de confiança:** _(preencher — alta / média / baixa)_
+
+**Próximo passo planejado:** _(preencher)_
 
 ---
