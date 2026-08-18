@@ -1095,3 +1095,30 @@ Também é possível testar sem informar `?prompt=...` — nesse caso, o valor p
 curl -X GET "http://localhost:8080/api/chat"
 ```
 
+#### ✅ Resultado dos testes manuais — confirmado
+
+```bash
+curl -X GET "http://localhost:8080/api/chat?prompt=Quanto%20%C3%A9%2010%20mais%2020%3F"
+10 mais 20 é igual a **30**.
+```
+
+```bash
+curl -X GET "http://localhost:8080/api/chat"
+Olá! Tudo bem? Como posso ajudar você hoje?
+```
+
+**Análise dos dois resultados, confirmando que corresponderam ao esperado:**
+
+- **Primeiro `curl` (com `?prompt=...` codificado em URL):** o texto `"Quanto%20%C3%A9%2010%20mais%2020%3F"` foi corretamente decodificado pelo Tomcat/Spring de volta para `"Quanto é 10 mais 20?"` antes de chegar ao método `chat(String prompt)` — confirmando, na prática, o funcionamento do *URL encoding* explicado na nota acima. A resposta veio formatada em **markdown** (`**30**`, com negrito) — o mesmo comportamento característico do `ChatClient` já observado e documentado no teste `GeminiChatClientIT` (onde a resposta ao prompt matemático veio "limpa", só o número) e nas respostas do `ChatModelController` da Parte 3 (mais "cruas", sem formatação). Essa diferença de estilo reforça, na prática, que `/api/chat` e `/api/chat-model` são dois caminhos de código realmente distintos, mesmo reaproveitando o mesmo `GoogleGenAiChatModel` por baixo (discutido em detalhe na seção sobre auto-configuração compartilhada, acima).
+- **Segundo `curl` (sem `?prompt=...`):** confirma o funcionamento do `@RequestParam(value = "prompt", defaultValue = "Olá!")` — como nenhum valor foi informado na URL, o Spring usou automaticamente `"Olá!"` como texto da mensagem de usuário, e o Gemini respondeu de forma coerente a essa saudação, sem nenhum erro de parâmetro ausente (o que aconteceria se o `defaultValue` não estivesse configurado).
+
+Ambos os testes confirmam, de ponta a ponta: o `ChatClientController` está corretamente injetando o `ChatClient.Builder`, finalizando a construção com `.build()`, e usando a API fluente (`.prompt().user(prompt).call().content()`) para obter e devolver a resposta do Gemini como texto puro no corpo da resposta HTTP — exatamente o comportamento descrito na explicação linha a linha acima.
+
+### ✅ Checkpoint da Parte 4 — fechado
+
+| Item | Status |
+|---|---|
+| `GeminiChatClientIT` — criado, rodado e passando (confirmado via log detalhado acima) | ✅ |
+| `ChatClientController` — criado, endpoint `GET /api/chat` testado manualmente com e sem parâmetro, ambos confirmados | ✅ |
+| Rotas `/api/chat-model` (Parte 3) e `/api/chat` (Parte 4) coexistindo sem conflito, ambas dependentes do mesmo `GoogleGenAiChatModel` auto-configurado | ✅ |
+
