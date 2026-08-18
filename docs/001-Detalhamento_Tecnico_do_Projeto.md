@@ -740,23 +740,55 @@ Refere-se ao mecanismo que **cria o *bean* `GoogleGenAiChatModel`**, explicado e
 
 Com o `ChatModel` puro, para configurar algo além do texto simples, era preciso montar manualmente objetos como `Prompt` e `GoogleGenAiChatOptions`. Com o `ChatClient`, existe uma **API fluente** dedicada — métodos encadeados que leem quase como uma frase — especificamente pensada para compor uma conversa com IA, incluindo: uma **mensagem de sistema** (instruções do desenvolvedor, moldando o comportamento geral do assistente), uma ou mais **mensagens de usuário** (a entrada real de quem conversa), e, como visto na Parte 5, **ferramentas** (*tools*) que o modelo pode decidir chamar.
 
-### Lado a lado: a mesma chamada, dois níveis de abstração
+### A mesma operação, dois níveis de abstração
 
-A tabela abaixo mostra **a mesma operação exata** — enviar um prompt e receber o texto de resposta — implementada das duas formas, para deixar visível o que o `ChatClient` elimina.
+A mesma tarefa exata — enviar um prompt e receber o texto de resposta — implementada das duas formas:
 
-| | `ChatModel` (Parte 3.4) | `ChatClient` (Parte 4.2) |
+**Com `ChatModel` puro (Parte 3.4):**
+
+```java
+var options = GoogleGenAiChatOptions.builder()
+        .model("gemini-3-flash-preview")
+        .temperature(1.0)
+        .responseMimeType("text/plain")
+        .build();
+
+ChatResponse response = chatModel.call(
+    new Prompt("Some 10 mais 20...", options)
+);
+
+String texto = response.getResult()
+        .getOutput()
+        .getText();
+```
+
+**Com `ChatClient` (Parte 4.2):**
+
+```java
+var chatClient = ChatClient.builder(chatModel)
+        .defaultSystem("Voce é um matematico")
+        .build();
+
+String texto = chatClient
+        .prompt("Some 10 mais 20...")
+        .call()
+        .content();
+```
+
+### Comparando ponto a ponto
+
+| Aspecto | `ChatModel` (Parte 3.4) | `ChatClient` (Parte 4.2) |
 |---|---|---|
-| **Código** | ```java\nvar options = GoogleGenAiChatOptions.builder()\n        .model("gemini-3-flash-preview")\n        .temperature(1.0)\n        .responseMimeType("text/plain")\n        .build();\n\nChatResponse response = chatModel.call(\n    new Prompt("Some 10 mais 20...", options)\n);\n\nString texto = response.getResult()\n        .getOutput()\n        .getText();\n``` | ```java\nvar chatClient = ChatClient.builder(chatModel)\n        .defaultSystem("Voce é um matematico")\n        .build();\n\nString texto = chatClient\n        .prompt("Some 10 mais 20...")\n        .call()\n        .content();\n``` |
-| **Linhas de código** | ~7 linhas, em 3 blocos separados (opções → prompt/chamada → extração) | ~4 linhas, em uma única cadeia fluente |
-| **Como monta as opções** | Manualmente, via `GoogleGenAiChatOptions.builder()`, objeto à parte | Não precisa — usa as opções globais do `application.properties` (Parte 3.3), a menos que você sobrescreva |
-| **Como define comportamento persistente ("aja como X")** | Não existe — teria que reconstruir o `Prompt` inteiro, com uma `SystemMessage`, em **toda** chamada | `.defaultSystem(...)`, configurado **uma vez** no *builder*, vale para todas as chamadas seguintes |
-| **Como monta a mensagem** | `new Prompt(texto, options)` — um construtor genérico | `.prompt("texto")` — já trata a `String` como `UserMessage` automaticamente |
-| **Como extrai o texto da resposta** | `response.getResult().getOutput().getText()` — 3 chamadas encadeadas, navegando a estrutura de `ChatResponse` | `.content()` — 1 chamada, já devolve a `String` pronta |
-| **O que está "por trás", de fato executando a chamada de rede** | O próprio `GoogleGenAiChatModel` (injetado direto) | O **mesmo** `GoogleGenAiChatModel` (obtido através de `ChatClient.builder(chatModel)`) |
-| **Quem criou esse `GoogleGenAiChatModel`** | A auto-configuração da Parte 3.3, a partir do `build.gradle` + `application.properties` | A **mesma** auto-configuração — nenhuma configuração nova, nenhuma chave nova |
+| Linhas de código | ~7 linhas, em 3 blocos separados (opções → prompt/chamada → extração) | ~4 linhas, em uma única cadeia fluente |
+| Como monta as opções | Manualmente, via `GoogleGenAiChatOptions.builder()`, objeto à parte | Não precisa — usa as opções globais do `application.properties` (Parte 3.3), a menos que você sobrescreva |
+| Como define comportamento persistente ("aja como X") | Não existe — teria que reconstruir o `Prompt` inteiro, com uma `SystemMessage`, em **toda** chamada | `.defaultSystem(...)`, configurado **uma vez** no *builder*, vale para todas as chamadas seguintes |
+| Como monta a mensagem | `new Prompt(texto, options)` — um construtor genérico | `.prompt("texto")` — já trata a `String` como `UserMessage` automaticamente |
+| Como extrai o texto da resposta | `response.getResult().getOutput().getText()` — 3 chamadas encadeadas, navegando a estrutura de `ChatResponse` | `.content()` — 1 chamada, já devolve a `String` pronta |
+| O que está "por trás", de fato executando a chamada de rede | O próprio `GoogleGenAiChatModel` (injetado direto) | O **mesmo** `GoogleGenAiChatModel` (obtido através de `ChatClient.builder(chatModel)`) |
+| Quem criou esse `GoogleGenAiChatModel` | A auto-configuração da Parte 3.3, a partir do `build.gradle` + `application.properties` | A **mesma** auto-configuração — nenhuma configuração nova, nenhuma chave nova |
 
-### O que a tabela deixa explícito
+### O que essa comparação deixa explícito
 
-- **A linha "por trás" é a prova visual da frase original**: as duas colunas convergem no mesmo objeto (`GoogleGenAiChatModel`), criado pela mesma auto-configuração — o `ChatClient` não é uma segunda conexão com o Gemini, é uma **camada de conveniência** sobre a primeira.
+- **A última linha da tabela é a prova da frase original**: as duas colunas convergem no mesmo objeto (`GoogleGenAiChatModel`), criado pela mesma auto-configuração — o `ChatClient` não é uma segunda conexão com o Gemini, é uma **camada de conveniência** sobre a primeira.
 - **O que o `ChatClient` "corta" não é a conexão em si, é o trabalho manual de montar/desmontar objetos** a cada chamada — `GoogleGenAiChatOptions.builder()...build()` (configuração), `new Prompt(...)` (montagem), `getResult().getOutput().getText()` (extração) somem, substituídos por uma cadeia fluente de 3 métodos (`.prompt().call().content()`).
 - **`.defaultSystem(...)` é o ganho mais estrutural**, não só sintático: com `ChatModel` puro, "o modelo deve se comportar como X" precisaria ser reconstruído a cada `Prompt` novo; com `ChatClient`, é configurado uma vez, no momento da construção, e persiste — a mesma lógica que sustenta, mais adiante, o prompt de sistema do assistente financeiro na Parte 11.
