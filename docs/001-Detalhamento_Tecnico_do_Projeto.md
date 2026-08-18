@@ -1068,6 +1068,27 @@ Diferente do `ChatModel` (que já vinha pronto para injeção direta, graças à
   > A solução do Spring AI para isso é o **`ChatClient.Builder`**, que é um *bean* de escopo **`prototype`** (diferente de `singleton`): toda vez que uma classe pede um `ChatClient.Builder` no construtor, o Spring entrega uma **instância nova e "limpa"** desse *builder* — já pré-configurada, por baixo dos panos, para usar o `GoogleGenAiChatModel` correto (o mesmo *singleton* de sempre, com a chave de API e as opções padrão), mas ainda **sem** nenhum prompt de sistema ou *tool* específica adicionada. Cada classe, então, customiza esse *builder* do seu próprio jeito, antes de chamar `.build()` — e é exatamente isso que este construtor faz: recebe o *builder* limpo e, sem nenhuma customização adicional (ainda — isso muda a partir da Parte 5), já finaliza com `.build()`.
   - **`.build()`** — finaliza a construção e devolve a instância pronta, do mesmo jeito que já vimos com `GoogleGenAiChatOptions.builder()...build()` na Parte 3.4.
 
+  > **O que exatamente `chatClientBuilder.build()` monta aqui — e quais "valores padrão" ele carrega, com precisão.** Vale destrinchar essa pergunta, porque existem **duas camadas diferentes** de "valor padrão" envolvidas, e só uma delas está de fato presente neste `ChatClientController` específico:
+  >
+  > **Camada 1 — modelo e temperatura do `GoogleGenAiChatModel` (essa, sim, herdada aqui).** As propriedades já configuradas em `application.properties` (Parte 3.3):
+  > ```properties
+  > spring.ai.google.genai.chat.options.model=gemini-3-flash-preview
+  > spring.ai.google.genai.chat.options.temperature=0.0
+  > ```
+  > já estavam **dentro** do `GoogleGenAiChatModel` **antes mesmo** de o `ChatClient.Builder` existir — porque, como visto acima, esse *builder* é criado **a partir** desse `GoogleGenAiChatModel` já pronto (`ChatClient.builder(chatModel)`, por trás da própria auto-configuração do Spring AI). Quando `.build()` finaliza a construção, o `ChatClient` resultante **herda** esse modelo e essa temperatura — é por isso que a resposta de `/api/chat` usa `gemini-3-flash-preview` a `0.0`, sem `ChatClientController` precisar reconfigurar nada disso.
+  >
+  > **Camada 2 — prompt de sistema e *tools* (essa, aqui, NÃO existe — não é "default", é "ausente").** Repare, na assinatura do construtor deste `ChatClientController` específico, que **nenhum** método de configuração é chamado entre `chatClientBuilder` e `.build()` — nem `.defaultSystem(...)`, nem `.defaultTools(...)`. O *builder* chega "limpo" (um *bean* de escopo `prototype`, recém-criado) e é finalizado **exatamente como chegou**. Isso não significa "com um prompt de sistema padrão qualquer" — significa **sem nenhum prompt de sistema**. O `ChatClient` resultante não tem nenhuma instrução de comportamento embutida, e responde de forma genérica, usando só o comportamento nativo do próprio Gemini.
+  >
+  > **Contraste, para deixar a diferença nítida entre as três classes que usam `ChatClient.builder(...)` ao longo do projeto:**
+  >
+  > | | `ChatClientController` (Parte 4.2) | `ToolCallingIT` (Parte 5.4) | `TranscriptionController` (Parte 11) |
+  > |---|---|---|---|
+  > | Modelo/temperatura | Herdados do `GoogleGenAiChatModel` já configurado | Idem | Idem |
+  > | `.defaultSystem(...)` chamado? | **Não** | Sim — `"Voce é um matematico"` | Sim — prompt do assistente financeiro (`system-message.st`) |
+  > | `.defaultTools(...)` chamado? | **Não** | Sim — `new MathTools()` | Sim — `persistTransactionUseCase`, `listTransactionsByCategoryUseCase` |
+  >
+  > **Resumindo:** `chatClientBuilder.build()` monta o `ChatClient`, e esse `ChatClient` carrega consigo o modelo e a temperatura já configurados via `application.properties` (herdados do `GoogleGenAiChatModel` subjacente) — isso sim é "veio pronto, sem eu especificar de novo". Mas não tem prompt de sistema nem *tools*, porque esta classe específica não chamou `.defaultSystem(...)` nem `.defaultTools(...)` antes do `.build()` — essas duas capacidades só entram em ação a partir das Partes 5 e 11, quando outras classes efetivamente as configuram.
+
 - **`@RequestParam(value = "prompt", defaultValue = "Olá!") String prompt`** — diferente do parâmetro "cru", sem anotação, do `ChatModelController` (Parte 3.6), aqui o parâmetro de *query string* é declarado explicitamente com **`@RequestParam`**, o que permite configurar um **valor padrão**: `defaultValue = "Olá!"`. Isso significa que, se a requisição não informar `?prompt=...` na URL, o Spring usa `"Olá!"` automaticamente, em vez de devolver um erro ou um valor nulo.
 
 - **`this.chatClient.prompt()`** — inicia a construção **fluente** de uma nova interação com o modelo — o ponto de entrada da API que dá nome ao conceito de "API fluente" explicado a seguir.
