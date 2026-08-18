@@ -1020,3 +1020,78 @@ BUILD SUCCESSFUL in 9s
 
 O resultado corresponde integralmente ao esperado pelo tutorial (Parte 4.2): o `ChatClient` foi construído com sucesso a partir do `GoogleGenAiChatModel` já auto-configurado (a mesma auto-configuração discutida no detalhamento acima), a mensagem de sistema (`.defaultSystem(...)`) foi aplicada, e o prompt matemático foi resolvido corretamente pelo Gemini, validado pela asserção `.contains("0")`. Nenhum erro, nenhuma falha — apenas avisos informativos de bibliotecas de terceiros (Mockito) e da JVM, sem relação com a lógica do teste ou do projeto.
 
+### Criando <mark style='background:orange'><font color='#000000'><strong>`ChatClientController`</strong></font></mark>
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/ChatClientController.java`
+
+```java
+package dio.budgeting;
+
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api")
+public class ChatClientController {
+
+    private final ChatClient chatClient;
+
+    public ChatClientController(ChatClient.Builder chatClientBuilder) {
+        this.chatClient = chatClientBuilder.build();
+    }
+
+    @GetMapping("/chat")
+    public String chat(@RequestParam(value = "prompt", defaultValue = "Olá!") String prompt) {
+        return this.chatClient.prompt()
+                .user(prompt)
+                .call()
+                .content();
+    }
+}
+```
+
+Diferente do `ChatModel` (que já vinha pronto para injeção direta, graças à auto-configuração, ao pedir `GoogleGenAiChatModel` diretamente no construtor), o `ChatClient` **não é injetado diretamente** — ele precisa ser **construído** a partir de um `ChatClient.Builder`, que **esse sim** é auto-configurado e injetável. Vamos entender por quê, e o que cada linha faz:
+
+- **`@RestController` / `@RequestMapping("/api")`** — os mesmos já vistos na Parte 3.6, sem novidade.
+
+- **`private final ChatClient chatClient;`** — o campo que vai guardar o `ChatClient` já configurado, `private` (só a própria classe acessa) e `final` (não é reatribuído depois de inicializado) — mesmo raciocínio de encapsulamento já explicado na Parte 3.6 para `GoogleGenAiChatModel`.
+
+- **`public ChatClientController(ChatClient.Builder chatClientBuilder) { this.chatClient = chatClientBuilder.build(); }`** — aqui está a diferença importante em relação à Parte 3. Em vez de o construtor receber o objeto **já pronto** para usar (como acontecia com `GoogleGenAiChatModel chatModel`), ele recebe um **`ChatClient.Builder`** — um "molde" ainda não finalizado — e é o **próprio construtor** quem finaliza essa construção, chamando `.build()`.
+
+  > **Por que o Spring não injeta o `ChatClient` já pronto, direto, como faz com o `GoogleGenAiChatModel`? Explicado do zero.** O `GoogleGenAiChatModel` é um *bean* de escopo **`singleton`** (o padrão do Spring, quando nada é dito em contrário): existe **uma única instância** dele, compartilhada por toda a aplicação — faz sentido, porque ele representa "a conexão configurada com o Gemini", e essa configuração (chave de API, modelo padrão, temperatura padrão) é a mesma para toda a aplicação, então não há motivo para duplicar esse objeto.
+  >
+  > O `ChatClient`, por outro lado, é pensado para ser **customizável por quem o usa** — cada classe da aplicação pode querer um `ChatClient` com um prompt de sistema diferente, ou com *tools* diferentes registradas (você vai ver isso, de forma bem concreta, na Parte 11: o `TranscriptionController` vai montar um `ChatClient` bem mais elaborado do que este, com prompt de sistema próprio e duas *tools* registradas — algo que `ChatClientController` não tem). Se o Spring injetasse um único `ChatClient` já pronto e compartilhado, **todas** as classes que o usassem ficariam presas à mesma configuração — não seria possível ter, por exemplo, "um `ChatClient` matemático" e "um `ChatClient` assistente financeiro" ao mesmo tempo, cada um com seu próprio comportamento.
+  >
+  > A solução do Spring AI para isso é o **`ChatClient.Builder`**, que é um *bean* de escopo **`prototype`** (diferente de `singleton`): toda vez que uma classe pede um `ChatClient.Builder` no construtor, o Spring entrega uma **instância nova e "limpa"** desse *builder* — já pré-configurada, por baixo dos panos, para usar o `GoogleGenAiChatModel` correto (o mesmo *singleton* de sempre, com a chave de API e as opções padrão), mas ainda **sem** nenhum prompt de sistema ou *tool* específica adicionada. Cada classe, então, customiza esse *builder* do seu próprio jeito, antes de chamar `.build()` — e é exatamente isso que este construtor faz: recebe o *builder* limpo e, sem nenhuma customização adicional (ainda — isso muda a partir da Parte 5), já finaliza com `.build()`.
+  - **`.build()`** — finaliza a construção e devolve a instância pronta, do mesmo jeito que já vimos com `GoogleGenAiChatOptions.builder()...build()` na Parte 3.4.
+
+- **`@RequestParam(value = "prompt", defaultValue = "Olá!") String prompt`** — diferente do parâmetro "cru", sem anotação, do `ChatModelController` (Parte 3.6), aqui o parâmetro de *query string* é declarado explicitamente com **`@RequestParam`**, o que permite configurar um **valor padrão**: `defaultValue = "Olá!"`. Isso significa que, se a requisição não informar `?prompt=...` na URL, o Spring usa `"Olá!"` automaticamente, em vez de devolver um erro ou um valor nulo.
+
+- **`this.chatClient.prompt()`** — inicia a construção **fluente** de uma nova interação com o modelo — o ponto de entrada da API que dá nome ao conceito de "API fluente" explicado a seguir.
+
+  > **O que é uma API fluente (*fluent API*), explicado do zero?** É um estilo de projeto de API em que os métodos são **encadeados** um após o outro (`objeto.metodoA().metodoB().metodoC()`), e cada método (exceto, tipicamente, o último da cadeia) devolve um novo objeto que permite continuar encadeando mais chamadas. Isso torna o código mais legível — quase como ler uma frase em linguagem natural — e evita a necessidade de criar várias variáveis intermediárias só para guardar resultados parciais.
+- **`.user(prompt)`** — adiciona o texto recebido como uma mensagem do tipo **usuário** (`UserMessage`, já mencionada na Parte 3.2) a esta interação em construção.
+- **`.call()`** — dispara, de fato, a chamada síncrona ao `ChatModel` que está por baixo deste `ChatClient` — o mesmo `GoogleGenAiChatModel` já configurado desde a Parte 3, só que acessado agora através da camada mais amigável do `ChatClient`.
+- **`.content()`** — extrai apenas o **texto** da resposta, já pronto para uso como `String`.
+
+**Testando manualmente**, com a aplicação rodando:
+
+```http
+GET http://localhost:8080/api/chat?prompt=Quanto é 10 mais 20?
+```
+
+```bash
+curl -X GET "http://localhost:8080/api/chat?prompt=Quanto%20%C3%A9%2010%20mais%2020%3F"
+```
+
+> **Nota sobre o `curl` acima:** como o texto do prompt tem espaços e o caractere acentuado "é", eles precisam ser **codificados** para viajar dentro de uma URL (um espaço vira `%20`, o "é" vira `%C3%A9` — essa codificação chama-se *URL encoding*). Se preferir simplicidade ao testar manualmente pelo terminal, use um prompt sem acentos/espaços especiais, como `?prompt=teste`, ou teste pela barra de endereço do navegador, que faz essa codificação sozinho ao digitar normalmente.
+
+Também é possível testar sem informar `?prompt=...` — nesse caso, o valor padrão `"Olá!"` (seção acima) é usado:
+
+```bash
+curl -X GET "http://localhost:8080/api/chat"
+```
+
