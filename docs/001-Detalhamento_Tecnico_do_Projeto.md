@@ -720,11 +720,7 @@ O teste executou com sucesso. O tempo total de 23 segundos inclui a inicializaç
 
 A saída do Gemini demonstra que a integração com o provedor de IA está **plenamente funcional**, exatamente como esperado na Parte 3 do tutorial.
 
-# Detalhamento da Parte 4
-
-## ChatClient vs. ChatModel
-
-Aqui está o material consolidado, pronto para você colar no seu Detalhamento da Parte 4:---
+# 🟩 Detalhamento da Parte 4
 
 ## `ChatClient` vs. `ChatModel`: o que muda, exatamente
 
