@@ -893,4 +893,134 @@ Explicando cada peça:
 
 Conta que o teste valida: `10 + 20 = 30`; `30 − 30 = 0`. **Ponto importante, que motiva a Parte 5:** neste momento, é o **próprio modelo de linguagem** quem faz essa conta "de cabeça" — baseado em padrões estatísticos aprendidos durante o treinamento, não em uma operação matemática real e exata. Isso funciona razoavelmente bem para aritmética simples como esta, mas não é confiável nem verificável para operações mais complexas ou para regras de negócio precisas — como, por exemplo, garantir que um valor monetário seja registrado com exatidão. É exatamente esse problema que o **Tool Calling**, na Parte 5, resolve.
 
-**Rode este teste agora**, antes de seguir para o Passo 2.
+### ▶️ Verificação: rodando <mark style='background:orange'><font color='#000000'><strong>`GeminiChatClientIT`</strong></font></mark>
+
+```log
+> Task :compileJava UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :compileTestJava UP-TO-DATE
+> Task :processTestResources UP-TO-DATE
+> Task :testClasses UP-TO-DATE
+08:37:18.330 [Test worker] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [dio.budgeting.GeminiChatClientIT]: GeminiChatClientIT does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+08:37:18.445 [Test worker] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration dio.budgeting.BudgetingApplication for test class dio.budgeting.GeminiChatClientIT
+08:37:18.516 [Test worker] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [dio.budgeting.GeminiChatClientIT]: GeminiChatClientIT does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+08:37:18.519 [Test worker] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration dio.budgeting.BudgetingApplication for test class dio.budgeting.GeminiChatClientIT
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.1.0)
+
+2026-08-18T08:37:18.825-03:00  INFO 26881 --- [budgeting] [    Test worker] dio.budgeting.GeminiChatClientIT         : Starting GeminiChatClientIT using Java 21.0.11 with PID 26881 (started by arthur in /mnt/storage_02/Backup_USB2/Backup_Github/budgeting-spring-ai-gemini/budgeting)
+2026-08-18T08:37:18.830-03:00  INFO 26881 --- [budgeting] [    Test worker] dio.budgeting.GeminiChatClientIT         : No active profile set, falling back to 1 default profile: "default"
+2026-08-18T08:37:19.786-03:00 DEBUG 26881 --- [budgeting] [    Test worker] o.s.a.m.t.a.ToolCallingAutoConfiguration : Cannot load class: org.springframework.security.oauth2.client.ClientAuthorizationException
+2026-08-18T08:37:20.302-03:00  INFO 26881 --- [budgeting] [    Test worker] dio.budgeting.GeminiChatClientIT         : Started GeminiChatClientIT in 1.729 seconds (process running for 3.091)
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
+WARNING: A Java agent has been loaded dynamically (/home/arthur/.gradle/caches/modules-2/files-2.1/net.bytebuddy/byte-buddy-agent/1.18.10/9426d28828bdcdf42666bb7a68c468279ea78f59/byte-buddy-agent-1.18.10.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+0
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+> Task :test
+BUILD SUCCESSFUL in 9s
+5 actionable tasks: 1 executed, 4 up-to-date
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.5.1/userguide/configuration_cache_enabling.html
+08:37:25: Execution finished ':test --tests "dio.budgeting.GeminiChatClientIT"'.
+```
+
+Aqui está a análise, no mesmo formato usado nos outros logs do seu arquivo de detalhamento — pronta para inserir após o código do `GeminiChatClientIT`.
+
+---
+
+### Análise do log — `GeminiChatClientIT`
+
+#### Bloco 1 — Tarefas do Gradle já em cache (`UP-TO-DATE`)
+
+```
+> Task :compileJava UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :compileTestJava UP-TO-DATE
+> Task :processTestResources UP-TO-DATE
+> Task :testClasses UP-TO-DATE
+```
+
+O Gradle constatou que nenhum arquivo-fonte mudou desde a última compilação (nem `GeminiChatClientIT.java`, nem `ChatClientController.java`, nem nenhum outro), então **reaproveitou** os `.class` já compilados, em vez de recompilar do zero — daí `UP-TO-DATE` em todas as seis tarefas iniciais. Isso é só otimização de build; não indica nada sobre o teste em si.
+
+#### Bloco 2 — Descoberta do contexto de configuração
+
+```
+AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [dio.budgeting.GeminiChatClientIT]: GeminiChatClientIT does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration dio.budgeting.BudgetingApplication for test class dio.budgeting.GeminiChatClientIT
+```
+
+Essas duas linhas aparecem **duas vezes seguidas** no log — comportamento normal do Spring Test, relacionado à forma como ele resolve a configuração antes de efetivamente montar o contexto (uma passagem de descoberta, seguida da montagem real). O conteúdo é sempre o mesmo:
+- **Primeira linha:** o Spring procura, dentro da própria classe `GeminiChatClientIT`, alguma classe de configuração aninhada e explícita (anotada com `@Configuration`) — não encontra nenhuma, porque, assim como `GeminiChatModelIT` na Parte 3, este teste não declara nenhuma.
+- **Segunda linha:** sem uma configuração explícita dentro do próprio teste, o Spring recorre à busca padrão — sobe pela árvore de pacotes até encontrar a classe anotada com `@SpringBootApplication` (que, por já incluir `@Configuration` — Parte 1.3 —, também conta como fonte válida de configuração). Encontra `dio.budgeting.BudgetingApplication`, e é a partir dela que todo o contexto (incluindo a auto-configuração do `GoogleGenAiChatModel`) é montado.
+
+#### Bloco 3 — Banner do Spring Boot e inicialização do contexto
+
+```
+2026-08-18T08:37:18.825-03:00  INFO 26881 ... dio.budgeting.GeminiChatClientIT : Starting GeminiChatClientIT using Java 21.0.11 with PID 26881
+2026-08-18T08:37:18.830-03:00  INFO 26881 ... dio.budgeting.GeminiChatClientIT : No active profile set, falling back to 1 default profile: "default"
+2026-08-18T08:37:19.786-03:00 DEBUG 26881 ... ToolCallingAutoConfiguration : Cannot load class: org.springframework.security.oauth2.client.ClientAuthorizationException
+2026-08-18T08:37:20.302-03:00  INFO 26881 ... dio.budgeting.GeminiChatClientIT : Started GeminiChatClientIT in 1.729 seconds (process running for 3.091)
+```
+
+- **"Starting GeminiChatClientIT"** — confirma que é o **próprio teste** (não `BudgetingApplication`) quem está atuando como ponto de entrada para esta execução — comportamento característico de `@SpringBootTest`, onde a classe de teste assume esse papel durante o processo de teste.
+- **"No active profile set"** — nenhum *profile* do Spring foi ativado explicitamente; usa a configuração padrão do `application.properties`, sem nenhuma variação de ambiente.
+- **`ToolCallingAutoConfiguration: Cannot load class: ...ClientAuthorizationException`** — já visto em execuções anteriores (Parte 3 em diante): o Spring AI verifica, na inicialização, se uma dependência opcional de segurança OAuth2 está presente no classpath; como não está (e não precisa estar), esse aviso em nível `DEBUG` é apenas informativo, sem nenhum impacto no funcionamento — visível aqui porque `logging.level.org.springframework.ai=DEBUG` está ativo desde a Parte 3.3.
+- **"Started GeminiChatClientIT in 1.729 seconds"** — o contexto completo (incluindo a auto-configuração do `GoogleGenAiChatModel`, discutida na Parte 4) subiu com sucesso, sem lançar nenhuma exceção — a primeira confirmação de que a integração básica está funcional.
+
+#### Bloco 4 — Avisos do Mockito
+
+```
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. ...
+WARNING: A Java agent has been loaded dynamically (...byte-buddy-agent-1.18.10.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+```
+
+O mesmo aviso já documentado na análise do log da Parte 3 (`GeminiChatModelIT`): o Mockito, trazido transitivamente pelo `spring-boot-starter-test`, avisa sobre uma mudança futura na forma como ele se conecta dinamicamente à JVM. Não tem relação com nenhum código escrito neste projeto — nenhum `mock` foi usado em `GeminiChatClientIT` — e não requer nenhuma ação.
+
+#### Bloco 5 — A saída do teste em si
+
+```
+0
+```
+
+Esta é a linha mais importante do log, e a que efetivamente comprova o resultado. Corresponde ao `System.out.println(response);`, no final do método `should_executeSum_when_prompted` (Parte 4.2). O valor **`0`** confirma que:
+- O `ChatClient` foi construído com sucesso a partir de `ChatClient.builder(chatModel)`.
+- `.defaultSystem("Voce é um matematico")` foi aplicado.
+- O prompt (`"Some 10 mais 20. Depois subtraia 30..."`) foi enviado ao Gemini através da API fluente (`.prompt(...).call().content()`).
+- O modelo respondeu **exatamente** com o resultado matemático correto (`10 + 20 − 30 = 0`), sem nenhum texto adicional ao redor — desta vez o Gemini optou por uma resposta "limpa" (lembrando que a asserção `.contains("0")`, e não `.isEqualTo("0")`, existe justamente para tolerar variações, caso o modelo decidisse responder com mais texto em outra execução).
+
+#### Bloco 6 — Aviso de compartilhamento de classes da JVM
+
+```
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+```
+
+Um aviso de baixo nível da própria JVM (não do Spring, não do projeto), relacionado a uma otimização interna de carregamento de classes (*Class Data Sharing*) que fica parcialmente desabilitada quando agentes de instrumentação (como o do Mockito, visto no Bloco 4) são carregados dinamicamente. Puramente informativo, sem efeito no resultado do teste.
+
+#### Bloco 7 — Resultado final
+
+```
+> Task :test
+BUILD SUCCESSFUL in 9s
+5 actionable tasks: 1 executed, 4 up-to-date
+```
+
+`BUILD SUCCESSFUL`, sem nenhuma falha reportada — confirma que a asserção `assertThat(response).contains("0")` foi satisfeita. Combinado com a linha `0` do Bloco 5 (que já garante, por si só, que o método executou até o fim sem lançar exceção), este é o resultado esperado e correto para o teste da Parte 4.2.
+
+#### ✅ Conclusão da análise
+
+O resultado corresponde integralmente ao esperado pelo tutorial (Parte 4.2): o `ChatClient` foi construído com sucesso a partir do `GoogleGenAiChatModel` já auto-configurado (a mesma auto-configuração discutida no detalhamento acima), a mensagem de sistema (`.defaultSystem(...)`) foi aplicada, e o prompt matemático foi resolvido corretamente pelo Gemini, validado pela asserção `.contains("0")`. Nenhum erro, nenhuma falha — apenas avisos informativos de bibliotecas de terceiros (Mockito) e da JVM, sem relação com a lógica do teste ou do projeto.
+
