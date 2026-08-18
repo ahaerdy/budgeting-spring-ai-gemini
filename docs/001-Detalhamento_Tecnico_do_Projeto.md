@@ -843,3 +843,54 @@ String resposta2 = chatModel.call(prompt2).getResult().getOutput().getText();
 - **A linha "por trás" da tabela é a prova da frase original**: as duas colunas convergem no mesmo objeto (`GoogleGenAiChatModel`), criado pela mesma auto-configuração — o `ChatClient` não é uma segunda conexão com o Gemini, é uma **camada de conveniência** sobre a primeira.
 - **O que o `ChatClient` "corta" não é a conexão em si, é o trabalho manual de montar/desmontar objetos** a cada chamada — `GoogleGenAiChatOptions.builder()...build()` (configuração), `new Prompt(...)` (montagem), `getResult().getOutput().getText()` (extração) somem, substituídos por uma cadeia fluente de 3 métodos (`.prompt().call().content()`).
 - **`.defaultSystem(...)` é o ganho mais estrutural, não só sintático**: é a diferença entre um objeto "sem memória de configuração" (`ChatModel`, onde cada `Prompt` é isolado) e um objeto que **carrega configuração persistente entre chamadas** (`ChatClient`) — o mecanismo que torna viável, na prática, um assistente com comportamento consistente ao longo de várias interações, sem repetição de código.
+
+### Criando o teste `GeminiChatClientIT` 
+
+**📁 Arquivo (novo, completo):** `budgeting/src/test/java/dio/budgeting/GeminiChatClientIT.java`
+
+```java
+package dio.budgeting;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+
+@SpringBootTest
+@EnabledIfEnvironmentVariable(named = "GEMINI_API_KEY", matches = ".+")
+public class GeminiChatClientIT {
+    @Autowired
+    GoogleGenAiChatModel chatModel;
+
+    @Test
+    void should_executeSum_when_prompted() {
+        var chatClient = ChatClient.builder(chatModel).defaultSystem("Voce é um matematico").build();
+
+        var response = chatClient.prompt("Some 10 mais 20. Depois subtraia 30 do resultado anterior." +
+                "Exiba o resultado final sem explicações")
+                .call().content();
+
+        assertThat(response).contains("0");
+        System.out.println(response);
+    }
+}
+```
+
+Explicando cada peça:
+
+- **`@SpringBootTest`** e **`@EnabledIfEnvironmentVariable(...)`** — já vistos na Parte 3.4: sobem o contexto completo e condicionam a execução à presença de `GEMINI_API_KEY`.
+- **`@Autowired GoogleGenAiChatModel chatModel;`** — repare que este teste injeta o **`ChatModel`**, não o `ChatClient.Builder` — a estratégia aqui é diferente da que o controller vai usar no Passo 2: em vez de receber o *builder* já pronto, o teste vai construir o `ChatClient` manualmente a partir do `ChatModel` injetado, usando uma forma alternativa do método `builder`, explicada a seguir.
+- **`ChatClient.builder(chatModel)`** — uma forma **estática alternativa** de obter um *builder*: em vez de `ChatClient.Builder` sendo injetado pronto pelo Spring (como veremos no controller), aqui o método estático `ChatClient.builder(...)` recebe diretamente um `ChatModel` já em mãos e devolve um *builder* configurado a partir dele. É uma forma conveniente de usar em testes, onde já se tem o `ChatModel` disponível por outro motivo (a injeção via `@Autowired`).
+- **`.defaultSystem("Voce é um matematico")`** — o método do *builder* que define a **mensagem de sistema padrão** (explicada na seção 4.1): o texto passado aqui será enviado como prompt de sistema em **toda** chamada feita a partir deste `ChatClient` específico, sem precisar ser repetido a cada `.prompt(...)`. O prefixo **`default`** neste método (e em outros que veremos, como `defaultTools`, na Parte 5) sinaliza que a configuração vale para **todas** as chamadas feitas a partir deste `ChatClient`, a menos que uma chamada específica a sobrescreva explicitamente.
+- **`chatClient.prompt("...")`** — uma forma **abreviada** de `chatClient.prompt().user("...")`: quando se passa uma `String` diretamente como argumento de `prompt(...)`, ela já é tratada automaticamente como a mensagem de usuário, sem precisar do `.user(...)` explícito que veremos no controller. Ambas as formas são equivalentes — a escolha de qual usar é apenas de estilo/conveniência.
+- **`.call().content()`** — `.call()` dispara a chamada síncrona ao `ChatModel` por baixo; `.content()` extrai apenas o **texto** da resposta, já pronto como `String` — um atalho equivalente, em uma única chamada, à cadeia `getResult().getOutput().getText()` necessária ao trabalhar diretamente com o `ChatModel` (Parte 3.4).
+- **`assertThat(response).contains("0");`** — repare no `import static` diferente do usado no teste da Parte 3.4: aqui é `org.assertj.core.api.AssertionsForClassTypes.assertThat`, em vez de `org.assertj.core.api.Assertions.assertThat`. Na prática, o efeito é o mesmo — `AssertionsForClassTypes` é uma classe interna do próprio AssertJ, focada em asserções para tipos "simples" como `String`, e a classe `Assertions` (usada no teste anterior) estende `AssertionsForClassTypes` por baixo dos panos. A diferença de qual `import` foi escolhido em cada teste reflete apenas uma sugestão automática diferente da IDE — sem impacto prático.
+- **`.contains("0")`**, em vez de `.isEqualTo("0")` — esta escolha **não** é acidental: o prompt pede a soma `10 + 20 − 30 = 0`, mas mesmo pedindo explicitamente "sem explicações", o modelo pode devolver um pouco de texto ao redor do número (por exemplo, "O resultado é 0"). Um `.isEqualTo("0")` falharia nesse cenário, mesmo com a resposta numérica correta — enquanto `.contains("0")` continua validando que o resultado certo está presente em algum lugar da resposta, sem exigir uma correspondência exata de formato.
+
+Conta que o teste valida: `10 + 20 = 30`; `30 − 30 = 0`. **Ponto importante, que motiva a Parte 5:** neste momento, é o **próprio modelo de linguagem** quem faz essa conta "de cabeça" — baseado em padrões estatísticos aprendidos durante o treinamento, não em uma operação matemática real e exata. Isso funciona razoavelmente bem para aritmética simples como esta, mas não é confiável nem verificável para operações mais complexas ou para regras de negócio precisas — como, por exemplo, garantir que um valor monetário seja registrado com exatidão. É exatamente esse problema que o **Tool Calling**, na Parte 5, resolve.
+
+**Rode este teste agora**, antes de seguir para o Passo 2.
