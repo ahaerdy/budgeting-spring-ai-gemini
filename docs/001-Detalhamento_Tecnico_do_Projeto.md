@@ -934,10 +934,6 @@ Consider enabling configuration cache to speed up this build: https://docs.gradl
 08:37:25: Execution finished ':test --tests "dio.budgeting.GeminiChatClientIT"'.
 ```
 
-Aqui está a análise, no mesmo formato usado nos outros logs do seu arquivo de detalhamento — pronta para inserir após o código do `GeminiChatClientIT`.
-
----
-
 ### Análise do log — `GeminiChatClientIT`
 
 #### Bloco 1 — Tarefas do Gradle já em cache (`UP-TO-DATE`)
