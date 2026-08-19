@@ -1143,3 +1143,11 @@ Ambos os testes confirmam, de ponta a ponta: o `ChatClientController` está corr
 | `ChatClientController` — criado, endpoint `GET /api/chat` testado manualmente com e sem parâmetro, ambos confirmados | ✅ |
 | Rotas `/api/chat-model` (Parte 3) e `/api/chat` (Parte 4) coexistindo sem conflito, ambas dependentes do mesmo `GoogleGenAiChatModel` auto-configurado | ✅ |
 
+# Detalhamento da Parte 5
+
+## Objetivo
+
+Substituir a "matemática de cabeça" do modelo por chamadas reais a métodos Java, introduzindo o padrão de Tool Calling em um exemplo simples e controlado, antes de aplicá-lo aos casos de uso reais do domínio (o que só acontece na Parte 8 em diante).
+
+Esta é a Parte mais curta do tutorial em número de arquivos — de propósito. Não existe nenhum arquivo de produção aqui, nem dependência nova no build.gradle (<mark style='background:#00ffff'><font color='#000000'><strong>o suporte a</strong></font></mark> <mark style='background:orange'><font color='#000000'><strong>@Tool</strong></font></mark> <mark style='background:#00ffff'><font color='#000000'><strong>já veio, de forma transitiva, junto do starter do Gemini, desde a Parte 1</strong></font></mark>). É, intencionalmente, um "laboratório" isolado só para você aprender o mecanismo antes de aplicá-lo a algo real, na Parte 8.
+
