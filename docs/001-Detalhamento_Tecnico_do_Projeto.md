@@ -1149,5 +1149,44 @@ Ambos os testes confirmam, de ponta a ponta: o `ChatClientController` está corr
 
 Substituir a "matemática de cabeça" do modelo por chamadas reais a métodos Java, introduzindo o padrão de Tool Calling em um exemplo simples e controlado, antes de aplicá-lo aos casos de uso reais do domínio (o que só acontece na Parte 8 em diante).
 
-Esta é a Parte mais curta do tutorial em número de arquivos — de propósito. Não existe nenhum arquivo de produção aqui, nem dependência nova no build.gradle (<mark style='background:#00ffff'><font color='#000000'><strong>o suporte a</strong></font></mark> <mark style='background:orange'><font color='#000000'><strong>@Tool</strong></font></mark> <mark style='background:#00ffff'><font color='#000000'><strong>já veio, de forma transitiva, junto do starter do Gemini, desde a Parte 1</strong></font></mark>). É, intencionalmente, um "laboratório" isolado só para você aprender o mecanismo antes de aplicá-lo a algo real, na Parte 8.
+Esta é a Parte mais curta do tutorial em número de arquivos — de propósito. Não existe nenhum arquivo de produção aqui, nem dependência nova no build.gradle (<mark style='background:#00ffff'><font color='#000000'><strong>o suporte a</strong></font></mark> <mark style='background:orange'><font color='#000000'><strong>@Tool</strong></font></mark> <mark style='background:#00ffff'><font color='#000000'><strong>já veio, de forma transitiva, junto do starter do Gemini, desde a Parte 1</strong></font></mark>). É, intencionalmente, um "laboratório" isolado só para se aprender o mecanismo antes de aplicá-lo a algo real, na Parte 8.
+
+## Tool Calling (Function Calling), explicado do zero, passo a passo (leitura, antes do código)
+
+**Tool Calling** — também chamado de *Function Calling* na documentação de vários provedores — é um recurso em que <mark style='background:#00ffff'><font color='#000000'><strong>um LLM, ao processar um prompt, pode decidir que a melhor forma de responder não é gerar texto diretamente, mas **solicitar a execução de uma função/método específico**</strong></font></mark>, previamente disponibilizado pela aplicação, com argumentos que o próprio modelo extrai do contexto da conversa.
+
+O fluxo completo, passo a passo:
+
+1. **Declaração:** <mark style='background:#00ffff'><font color='#000000'><strong>a aplicação informa ao modelo, junto com o prompt, quais *tools* (ferramentas) estão disponíveis</strong></font></mark> — cada uma <mark style='background:#00ffff'><font color='#000000'><strong>identificada por</strong></font></mark> um **<mark style='background:#00ffff'><font color='#000000'><strong>nome</strong></font></mark>**, uma **<mark style='background:#00ffff'><font color='#000000'><strong>descrição</strong></font></mark>** (em linguagem natural, explicando o que a ferramenta faz e quando usá-la) e uma **<mark style='background:#00ffff'><font color='#000000'><strong>assinatura de parâmetros</strong></font></mark>** (quais argumentos ela espera, e de que tipo).
+2. **Decisão do modelo:** <mark style='background:#00ffff'><font color='#000000'><strong>o modelo recebe o prompt do usuário e, sozinho, decide se alguma das *tools* disponíveis deveria ser chamada</strong></font></mark> para responder adequadamente — e, se sim, **com quais argumentos**, extraídos do contexto da conversa.
+3. **Execução real:** este é o ponto mais importante de entender — **o modelo não executa nada por conta própria**. Ele apenas *solicita* a chamada. É a **aplicação** — no nosso caso, o Spring AI, atuando por trás do `ChatClient` — quem efetivamente localiza o método Java correspondente e o invoca de verdade.
+4. **Retorno e continuação:** <mark style='background:#00ffff'><font color='#000000'><strong>o resultado dessa execução real volta para o modelo como uma nova mensagem, inserida automaticamente no histórico da conversa</strong></font></mark>. O modelo então usa esse resultado — um dado real e exato, não mais uma previsão estatística — para formular a resposta final ao usuário.
+
+> **Por que isso resolve o problema visto na Parte 4?** Porque, <mark style='background:#00ffff'><font color='#000000'><strong>em vez do modelo "adivinhar"</strong></font></mark> o resultado de `10 + 20 − 30` com base em padrões de texto que viu durante o treinamento, ele <mark style='background:#00ffff'><font color='#000000'><strong>passa a **delegar** o cálculo para um método Java real</strong></font></mark>, que executa a operação matematicamente exata — e é esse valor exato, e não uma previsão, que retorna ao modelo para compor a resposta.
+
+## A anotação `@Tool`, explicada do zero (leitura, antes do código)
+
+Uma *tool* é declarada simplesmente anotando um método Java comum com `@Tool`:
+
+```java
+@Tool(description = "soma dois números inteiros, a e b")
+public int sum(int a, int b) {
+    return a + b;
+}
+```
+
+- **`@Tool(description = "...")`** — a anotação, do pacote `org.springframework.ai.tool.annotation`, que <mark style='background:#00ffff'><font color='#000000'><strong>transforma um método Java comum em uma ferramenta disponível ao modelo</strong></font></mark>. O atributo **<mark style='background:orange'><font color='#000000'><strong>`description`</strong></font></mark>** é o elemento mais importante desta anotação: é o único texto que o modelo tem disponível para decidir **quando** e **por que** essa ferramenta deveria ser chamada. Ela <mark style='background:#00ffff'><font color='#000000'><strong>funciona como uma "bula", escrita para a IA interpretar</strong></font></mark>, não como um comentário de código para outro desenvolvedor humano ler.
+- **<mark style='background:yellow'><font color='#000000'><strong>Descoberta automática de parâmetros, via reflexão.</strong></font></mark>** Repare que **não é preciso** escrever manualmente, em nenhum lugar, "o parâmetro `a` é um inteiro chamado `a`". <mark style='background:#00ffff'><font color='#000000'><strong>O Spring AI usa **reflexão**</strong></font></mark> (a capacidade da linguagem Java de examinar, em tempo de execução, a estrutura de uma classe — seus métodos, parâmetros, tipos) para descobrir automaticamente o nome de cada parâmetro e seu tipo, e a partir disso <mark style='background:#00ffff'><font color='#000000'><strong>monta, sozinho, um **esquema** enviado ao modelo junto da</strong></font></mark> <mark style='background:orange'><font color='#000000'><strong>`description`</strong></font></mark>.
+
+### Registrando as tools no `ChatClient`: `.defaultTools(...)` (leitura, antes do código)
+
+```java
+var chatClient = ChatClient.builder(chatModel)
+        .defaultSystem("Você é um matemático")
+        .defaultTools(new MathTools())
+        .build();
+```
+
+- **`.defaultTools(new MathTools())`** — <mark style='background:#00ffff'><font color='#000000'><strong>registra uma **instância** da classe de ferramentas</strong></font></mark> (criada com <mark style='background:orange'><font color='#000000'><strong>`new MathTools()`</strong></font></mark>) como disponível para todas as chamadas feitas a partir deste `ChatClient` específico. <mark style='background:#00ffff'><font color='#000000'><strong>O registro precisa ser feito no momento da **construção** do</strong></font></mark> <mark style='background:orange'><font color='#000000'><strong>`ChatClient`</strong></font></mark> (encadeado junto de `.build()`), via `.defaultTools(...)` — e não apenas em uma chamada específica de `.prompt(...)`.
+
 
