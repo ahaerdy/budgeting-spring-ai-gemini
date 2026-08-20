@@ -410,7 +410,7 @@ DefaultToolCallResultConverter : Converting tool result to JSON.
 | `ToolCallingIT` — criado, rodado e passando | ✅ |
 | Tool Calling confirmado via logs (`DefaultToolCallingManager`, `MethodToolCallback`) para **ambas** as ferramentas, em sequência correta | ✅ |
 
-**Marca de confiança:** não avaliado retroativamente (checkpoint anterior à introdução do campo, 17/08/2026)
+**Marca de confiança:** Média (7/10)
 
 ---
 

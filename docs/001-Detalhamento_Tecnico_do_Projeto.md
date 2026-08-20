@@ -1189,4 +1189,213 @@ var chatClient = ChatClient.builder(chatModel)
 
 - **`.defaultTools(new MathTools())`** — <mark style='background:#00ffff'><font color='#000000'><strong>registra uma **instância** da classe de ferramentas</strong></font></mark> (criada com <mark style='background:orange'><font color='#000000'><strong>`new MathTools()`</strong></font></mark>) como disponível para todas as chamadas feitas a partir deste `ChatClient` específico. <mark style='background:#00ffff'><font color='#000000'><strong>O registro precisa ser feito no momento da **construção** do</strong></font></mark> <mark style='background:orange'><font color='#000000'><strong>`ChatClient`</strong></font></mark> (encadeado junto de `.build()`), via `.defaultTools(...)` — e não apenas em uma chamada específica de `.prompt(...)`.
 
+### Criando o teste `ToolCallingIT`
+
+**📁 Arquivo (novo):** `budgeting/src/test/java/dio/budgeting/ToolCallingIT.java`
+
+```java
+package dio.budgeting;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+
+@SpringBootTest
+@EnabledIfEnvironmentVariable(named = "GEMINI_API_KEY", matches = ".+")
+public class ToolCallingIT {
+    @Autowired
+    GoogleGenAiChatModel chatModel;
+
+    static class MathTools {
+
+        @Tool(description = "soma dois números inteiros, a e b")
+        public int sum(int a, int b) {
+            return a + b;
+        }
+
+        @Tool(description = "subtrai dois números inteiros, a e b")
+        public int diff(int a, int b) {
+            return a - b;
+        }
+    }
+
+    @Test
+    void should_executeSum_when_prompted() {
+        var chatClient = ChatClient.builder(chatModel)
+                .defaultSystem("Voce é um matematico")
+                .defaultTools(new MathTools())
+                .build();
+
+        var response = chatClient.prompt("Some 10 mais 20. Depois subtraia 30 do resultado anterior." +
+                "Exiba o resultado final sem explicações")
+                .call().content();
+
+        assertThat(response).contains("0");
+        System.out.println(response);
+    }
+}
+```
+
+**✅ Este é o arquivo completo.**
+
+Explicando as partes que **não** apareceram ainda nas Partes 3 e 4:
+
+- **`static class MathTools { ... }`** — uma **classe interna estática** (*static nested class*), declarada dentro da própria classe de teste `ToolCallingIT`. A palavra-chave `static` aqui significa que essa classe interna **não precisa** de uma instância de `ToolCallingIT` para existir — ela pode ser instanciada diretamente com `new MathTools()`, independentemente de qualquer teste específico. Ela existe apenas para agrupar, localmente, as duas ferramentas de exemplo usadas neste teste — na Parte 8, você vai ver que as ferramentas "de verdade" do projeto (`PersistTransactionUseCase`, `ListTransactionsByCategoryUseCase`) não são classes internas de teste, mas classes de primeira classe do próprio pacote `application`.
+- **`@Tool(description = "soma dois números inteiros, a e b")` / `@Tool(description = "subtrai dois números inteiros, a e b")`** — como explicado na seção 5.2, cada método anotado vira uma ferramenta que o modelo pode escolher chamar.
+- **`ChatClient.builder(chatModel).defaultSystem("Voce é um matematico").defaultTools(new MathTools()).build()`** — a mesma construção da Parte 4.2 (`ChatClient.builder(chatModel)`, o mesmo `.defaultSystem(...)`), agora com **`.defaultTools(new MathTools())`** adicionado — a única diferença real de código em relação ao teste `GeminiChatClientIT` da Parte 4.
+
+**Ponto crucial: essa diferença de uma linha não é visível "olhando o resultado".** O texto final devolvido pelo modelo pode até ser idêntico ao do teste da Parte 4 (`"0"`, ou uma frase contendo `"0"`) — a diferença real está no **comportamento interno**: em vez do modelo "adivinhar" a soma e a subtração a partir de padrões estatísticos de linguagem, ele agora **delega** ambas as operações para os métodos reais `sum` e `diff`, que executam a aritmética de forma exata em Java.
+
+**Como confirmar, de fato, que a tool foi usada — e não o modelo "de cabeça"?** É aqui que a propriedade `logging.level.org.springframework.ai=DEBUG`, configurada lá na Parte 3.3, se torna útil: com ela ativa, os logs de execução deste teste mostram entradas de classes internas do Spring AI como `DefaultToolCallingManager` e `MethodToolCallback`, evidenciando as chamadas reais aos métodos `sum` e `diff` — inclusive a conversão do valor de retorno de cada um para um formato estruturado (JSON), antes de ser devolvido ao modelo, que então usa esses valores exatos (e não estimados) para compor a resposta final. Se quiser confirmar visualmente, procure por essas classes no console ao rodar o teste.
+
+## Rodando o teste
+
+Segue abaixo o log da execução:
+
+```log
+> Task :compileJava UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :compileTestJava UP-TO-DATE
+> Task :processTestResources UP-TO-DATE
+> Task :testClasses UP-TO-DATE
+10:36:13.219 [Test worker] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [dio.budgeting.ToolCallingIT]: ToolCallingIT does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+10:36:13.409 [Test worker] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration dio.budgeting.BudgetingApplication for test class dio.budgeting.ToolCallingIT
+10:36:13.493 [Test worker] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [dio.budgeting.ToolCallingIT]: ToolCallingIT does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+10:36:13.495 [Test worker] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration dio.budgeting.BudgetingApplication for test class dio.budgeting.ToolCallingIT
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.1.0)
+
+2026-08-19T10:36:13.836-03:00  INFO 48379 --- [budgeting] [    Test worker] dio.budgeting.ToolCallingIT              : Starting ToolCallingIT using Java 21.0.11 with PID 48379 (started by arthur in /mnt/storage_02/Backup_USB2/Backup_Github/budgeting-spring-ai-gemini/budgeting)
+2026-08-19T10:36:13.837-03:00  INFO 48379 --- [budgeting] [    Test worker] dio.budgeting.ToolCallingIT              : No active profile set, falling back to 1 default profile: "default"
+2026-08-19T10:36:14.922-03:00 DEBUG 48379 --- [budgeting] [    Test worker] o.s.a.m.t.a.ToolCallingAutoConfiguration : Cannot load class: org.springframework.security.oauth2.client.ClientAuthorizationException
+2026-08-19T10:36:15.457-03:00  INFO 48379 --- [budgeting] [    Test worker] dio.budgeting.ToolCallingIT              : Started ToolCallingIT in 1.881 seconds (process running for 3.219)
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
+WARNING: A Java agent has been loaded dynamically (/home/arthur/.gradle/caches/modules-2/files-2.1/net.bytebuddy/byte-buddy-agent/1.18.10/9426d28828bdcdf42666bb7a68c468279ea78f59/byte-buddy-agent-1.18.10.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+2026-08-19T10:36:18.879-03:00 DEBUG 48379 --- [budgeting] [    Test worker] o.s.a.m.tool.DefaultToolCallingManager   : Executing tool call: sum
+2026-08-19T10:36:18.881-03:00 DEBUG 48379 --- [budgeting] [    Test worker] o.s.ai.tool.method.MethodToolCallback    : Starting execution of tool: sum
+2026-08-19T10:36:18.886-03:00 DEBUG 48379 --- [budgeting] [    Test worker] o.s.ai.tool.method.MethodToolCallback    : Successful execution of tool: sum
+2026-08-19T10:36:18.887-03:00 DEBUG 48379 --- [budgeting] [    Test worker] o.s.a.t.e.DefaultToolCallResultConverter : Converting tool result to JSON.
+2026-08-19T10:36:34.454-03:00 DEBUG 48379 --- [budgeting] [    Test worker] o.s.a.m.tool.DefaultToolCallingManager   : Executing tool call: diff
+2026-08-19T10:36:34.454-03:00 DEBUG 48379 --- [budgeting] [    Test worker] o.s.ai.tool.method.MethodToolCallback    : Starting execution of tool: diff
+2026-08-19T10:36:34.459-03:00 DEBUG 48379 --- [budgeting] [    Test worker] o.s.ai.tool.method.MethodToolCallback    : Successful execution of tool: diff
+2026-08-19T10:36:34.459-03:00 DEBUG 48379 --- [budgeting] [    Test worker] o.s.a.t.e.DefaultToolCallResultConverter : Converting tool result to JSON.
+0
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+> Task :test
+BUILD SUCCESSFUL in 24s
+5 actionable tasks: 1 executed, 4 up-to-date
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.5.1/userguide/configuration_cache_enabling.html
+10:36:35: Execution finished ':test --tests "dio.budgeting.ToolCallingIT"'.
+```
+
+### Análise do log — `ToolCallingIT`
+
+#### Bloco 1 — Tarefas do Gradle em cache
+
+```
+> Task :compileJava UP-TO-DATE
+...
+> Task :testClasses UP-TO-DATE
+```
+
+Mesmo padrão já visto nas análises anteriores (Partes 3 e 4): nenhum arquivo-fonte mudou desde a última compilação, então o Gradle reaproveita os `.class` já existentes. Não indica nada sobre o resultado do teste em si.
+
+#### Bloco 2 — Descoberta do contexto de configuração
+
+```
+AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [dio.budgeting.ToolCallingIT]: ToolCallingIT does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration dio.budgeting.BudgetingApplication for test class dio.budgeting.ToolCallingIT
+```
+
+O mesmo mecanismo já documentado na análise do `GeminiChatClientIT`: o Spring procura, primeiro, uma classe `@Configuration` aninhada dentro do próprio `ToolCallingIT` — não encontra nenhuma (a classe `MathTools` aninhada existe, mas **não** está anotada com `@Configuration`; é uma classe de domínio de teste, não de configuração do Spring). Sem isso, o Spring recorre à busca padrão e encontra `BudgetingApplication`, usando-a como base para montar todo o contexto.
+
+#### Bloco 3 — Banner do Spring Boot e inicialização do contexto
+
+```
+Starting ToolCallingIT using Java 21.0.11 with PID 48379
+No active profile set, falling back to 1 default profile: "default"
+DEBUG ToolCallingAutoConfiguration : Cannot load class: org.springframework.security.oauth2.client.ClientAuthorizationException
+Started ToolCallingIT in 1.881 seconds (process running for 3.219)
+```
+
+Idêntico, em estrutura, ao já analisado nos logs anteriores: o próprio teste assume o papel de ponto de entrada (`@SpringBootTest`); nenhum *profile* ativo; o aviso `DEBUG` sobre a classe OAuth2 ausente continua sendo apenas informativo (dependência opcional de segurança, não usada neste projeto); e o contexto completo sobe sem lançar nenhuma exceção em `1.881` segundos — a primeira confirmação de que toda a configuração básica (incluindo a auto-configuração do `GoogleGenAiChatModel`, já discutida) está correta.
+
+#### Bloco 4 — Avisos do Mockito
+
+Mesmo aviso já documentado nas análises anteriores — trazido transitivamente pelo `spring-boot-starter-test`, sem relação com nenhum código escrito neste teste, e sem ação necessária.
+
+#### Bloco 5 — A evidência central: Tool Calling acontecendo de verdade
+
+```
+DEBUG DefaultToolCallingManager : Executing tool call: sum
+DEBUG MethodToolCallback        : Starting execution of tool: sum
+DEBUG MethodToolCallback        : Successful execution of tool: sum
+DEBUG DefaultToolCallResultConverter : Converting tool result to JSON.
+
+DEBUG DefaultToolCallingManager : Executing tool call: diff
+DEBUG MethodToolCallback        : Starting execution of tool: diff
+DEBUG MethodToolCallback        : Successful execution of tool: diff
+DEBUG DefaultToolCallResultConverter : Converting tool result to JSON.
+```
+
+Este é o bloco mais importante de todo o log, e o motivo de a Parte 5 do tutorial insistir tanto em ativar `logging.level.org.springframework.ai=DEBUG` (Parte 3.3). Ele prova, com evidência concreta, exatamente o fluxo teórico de Tool Calling explicado na seção 5.1:
+
+| Linha do log | Etapa do fluxo teórico (seção 5.1) |
+|---|---|
+| `Executing tool call: sum` | O modelo **decidiu** chamar `sum`; a aplicação está prestes a executá-la de verdade — não é o modelo quem executa |
+| `Starting execution of tool: sum` | A execução real do método Java `sum(int a, int b)` está começando |
+| `Successful execution of tool: sum` | `sum(10, 20)` rodou e devolveu `30` — matemática **exata**, calculada por código Java, não estimada pelo modelo |
+| `Converting tool result to JSON` | O resultado (`30`) é serializado para um formato que o modelo consegue interpretar, antes de voltar para ele |
+| *(sequência repetida para `diff`)* | O modelo recebeu o `30` já calculado, decidiu chamar `diff` com esse valor como entrada, e `diff(30, 30)` foi executado de verdade, devolvendo `0` |
+
+**Um detalhe temporal que vale registrar:** entre a execução de `sum` (10:36:18) e a de `diff` (10:36:34), há um intervalo de **~15 segundos** — bem mais longo que o intervalo entre as sub-etapas de cada chamada individual (medido em milissegundos). Isso corresponde ao tempo de **rede**: depois de `sum` devolver seu resultado, essa informação precisa voltar para o Gemini (uma nova chamada HTTP, pela internet), o modelo processa esse resultado e decide chamar `diff` em seguida — esse é o tempo de ida e volta até os servidores do Google, não uma lentidão do código Java em si (que executa em milissegundos, como mostram os timestamps de `Starting`/`Successful execution`).
+
+#### Bloco 6 — A saída do teste em si
+
+```
+0
+```
+
+O `System.out.println(response)` do teste (seção 5.4). Confirma que a resposta final do modelo — já incorporando os dois resultados **reais** obtidos via Tool Calling — foi `"0"`, exatamente o valor esperado (`10 + 20 − 30 = 0`), validando a asserção `assertThat(response).contains("0")`.
+
+#### Bloco 7 — Aviso de compartilhamento de classes da JVM e resultado final
+
+```
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+> Task :test
+BUILD SUCCESSFUL in 24s
+5 actionable tasks: 1 executed, 4 up-to-date
+```
+
+O aviso da JVM é o mesmo já documentado nas análises anteriores — otimização interna de carregamento de classes, sem relação com o projeto. `BUILD SUCCESSFUL`, sem nenhuma falha reportada, confirma que a asserção foi satisfeita. Vale notar a duração total (`24s`) — bem maior que os `9s` do teste `GeminiChatClientIT` (Parte 4) — coerente com o fato de este teste envolver **duas** chamadas de rede completas ao Gemini (uma para decidir e processar `sum`, outra para `diff`), em vez de uma única chamada.
+
+### ✅ Conclusão da análise — Checkpoint da Parte 5
+
+O resultado corresponde integralmente ao esperado pelo tutorial (Parte 5.4): diferente do teste `GeminiChatClientIT` da Parte 4 (onde não havia como comprovar, só pelo resultado, se o cálculo foi "de cabeça" ou não), este log traz **prova concreta e rastreável** de que o mecanismo de Tool Calling funcionou de ponta a ponta — as classes internas `DefaultToolCallingManager` e `MethodToolCallback` aparecem **duas vezes cada**, uma para `sum`, outra para `diff`, confirmando que:
+
+1. O modelo decidiu, sozinho, chamar as duas ferramentas, na ordem certa (soma primeiro, subtração depois — exatamente como o prompt pedia).
+2. Cada ferramenta foi executada como código Java real, não simulada.
+3. O resultado de `sum` foi corretamente usado como entrada de `diff` — o encadeamento de chamadas funcionou com base em dados reais, não em suposição.
+
+| Item | Status |
+|---|---|
+| `ToolCallingIT` — criado, rodado e passando | ✅ |
+| Tool Calling confirmado via logs (`DefaultToolCallingManager`, `MethodToolCallback`) para **ambas** as ferramentas, em sequência correta | ✅ |
 
