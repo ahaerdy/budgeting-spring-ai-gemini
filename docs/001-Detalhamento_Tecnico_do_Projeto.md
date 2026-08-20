@@ -1897,3 +1897,27 @@ curl -X POST "http://localhost:8080/api/transcribe" \
   -F "file=@src/test/resources/audio/recording-1.mp3;type=audio/mpeg"
 ```
 
+#### ✅ Resultado do teste manual — confirmado
+
+```bash
+curl -X POST "http://localhost:8080/api/transcribe" \
+  -F "file=@src/test/resources/audio/recording-1.mp3;type=audio/mpeg"
+Fui na farmácia rapidinho e deixei 80 reais em três itens.
+```
+
+**Análise do resultado:**
+
+- **Transcrição correta e fiel ao áudio original** — o texto devolvido é idêntico ao já observado tanto no `System.out.println` da Parte 6.5 quanto no primeiro caso (`recording-1.mp3`) da tabela de resultados do `GeminiTranscriptionModelIT`, documentada acima. Isso confirma, de forma cruzada, que o **mesmo áudio**, processado por **dois caminhos de código diferentes** (o teste, que chama `chatModel.call(...)` diretamente; e agora o controller, através de uma requisição HTTP real), produz o **mesmo resultado** — evidência de que a lógica de transcrição está corretamente isolada e não depende de nenhum estado específico do ambiente de teste.
+- **Confirma o fluxo HTTP completo, de ponta a ponta:** o Tomcat recebeu a requisição `POST` na porta `8080`; o `DispatcherServlet` a despachou; o Spring reconheceu o `Content-Type: multipart/form-data` (graças a `consumes = MediaType.MULTIPART_FORM_DATA_VALUE`) e associou o campo `file` ao parâmetro `@RequestParam("file") MultipartFile file`; o método `transcribe(...)` converteu esse arquivo em `Media` via `file.getResource()`, montou a `UserMessage` multimodal (texto + áudio) e a enviou ao Gemini através do `GoogleGenAiChatModel` já auto-configurado; a resposta voltou como texto puro, escrito diretamente no corpo da resposta HTTP (por ser um `@RestController`, sem necessidade de serialização JSON adicional, já que o tipo de retorno é `String`).
+- **Nenhum erro de codificação ou de tipo MIME:** o `;type=audio/mpeg` do `curl` bateu corretamente com o `MimeTypeUtils.parseMimeType("audio/mpeg")` esperado pelo código — confirmando que a negociação de tipo de conteúdo entre cliente (`curl`) e servidor (Spring) funcionou sem ajustes adicionais.
+
+### ✅ Checkpoint da Parte 6 — fechado
+
+| Item | Status |
+|---|---|
+| Seis áudios de teste gravados e posicionados em `src/test/resources/audio/` | ✅ |
+| `GeminiTranscriptionModelIT` — executado; falhas identificadas como variação de formato de saída do modelo (não bug), não como erro de implementação | ✅ |
+| `TranscriptionController` (versão inicial) — criado, endpoint `POST /api/transcribe` testado manualmente via `curl`, transcrição correta e coerente com o resultado já observado no teste automatizado | ✅ |
+
+**Próxima etapa:** Parte 7 do tutorial — síntese de voz (TTS), o segundo e último ponto sem equivalente Gemini no Spring AI, usando o SDK nativo do Google GenAI diretamente.
+
