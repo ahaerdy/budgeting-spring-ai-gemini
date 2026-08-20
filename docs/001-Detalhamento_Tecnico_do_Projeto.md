@@ -1399,3 +1399,501 @@ O resultado corresponde integralmente ao esperado pelo tutorial (Parte 5.4): dif
 | `ToolCallingIT` — criado, rodado e passando | ✅ |
 | Tool Calling confirmado via logs (`DefaultToolCallingManager`, `MethodToolCallback`) para **ambas** as ferramentas, em sequência correta | ✅ |
 
+---
+
+# Detalhamento da Parte 6
+
+## Objetivo
+
+Transformar um arquivo de áudio (a fala do usuário) em texto — o primeiro elo real da cadeia **Áudio → STT → Tool Calling → TTS → Áudio**.
+
+
+### Visão geral desta etapa — os 3 passos, em ordem
+
+| Passo | Ação | Arquivo/Local |
+|---|---|---|
+| 1 | Gravar seus próprios áudios de teste | `budgeting/src/test/resources/audio/recording-1.mp3` a `recording-6.mp3` |
+| 2 | Criar o teste parametrizado | `budgeting/src/test/java/dio/budgeting/GeminiTranscriptionModelIT.java` |
+| 3 | Criar o controller (versão inicial — será expandido na Parte 11) | `budgeting/src/main/java/dio/budgeting/TranscriptionController.java` |
+
+Mesma ordem lógica das Partes anteriores: matéria-prima primeiro (Passo 1), teste depois (Passo 2), endpoint HTTP por último (Passo 3). Nenhuma dependência nova no `build.gradle` — a transcrição reaproveita o mesmo `GoogleGenAiChatModel` já configurado desde a Parte 3.
+
+### O caminho ensinado no curso: `TranscriptionModel` (OpenAI/Whisper) — leitura, antes do código
+
+O Spring AI define, para transcrição, uma interface dedicada:
+
+> **⚠️ Não crie nenhum arquivo para este bloco — e, neste caso específico, você nunca vai usá-lo de fato.** Este código existe dentro do Spring AI, mas **não tem implementação para o Gemini** (é justamente o assunto desta Parte). Ele é mostrado apenas para você entender o que o curso ensina com OpenAI, antes de ver, na seção 6.4, a solução real que você vai implementar.
+
+```java
+public interface TranscriptionModel extends Model<AudioTranscriptionPrompt, AudioTranscriptionResponse> {
+    AudioTranscriptionResponse call(AudioTranscriptionPrompt transcriptionPrompt);
+
+    default String transcribe(Resource resource) {
+        AudioTranscriptionPrompt prompt = new AudioTranscriptionPrompt(resource);
+        return this.call(prompt).getResult().getOutput();
+    }
+}
+```
+
+- **`Resource`** — uma abstração do próprio Spring (não específica de IA, usada em várias partes do framework) para representar "algo que pode ser lido como uma sequência de bytes", independentemente de onde esse conteúdo realmente mora: pode ser um arquivo no disco, um arquivo dentro do *classpath* (empacotado junto do `.jar` da aplicação), um array de bytes já em memória, ou até um arquivo recém-recebido em uma requisição HTTP. É o tipo usado, ao longo de todo este projeto, para representar áudio de entrada, não importa a origem.
+- **`transcribe(Resource resource)`** — um método `default` (mesmo conceito da Parte 3.1: já vem implementado dentro da própria interface) de conveniência: você passa o áudio, recebe diretamente a `String` transcrita, sem precisar montar manualmente um `AudioTranscriptionPrompt`.
+
+No momento em que o curso ensina este conteúdo, o **único provedor suportado** pelo Spring AI para `TranscriptionModel` é a **Whisper API da OpenAI** (e sua variante equivalente no Azure OpenAI). Whisper é o modelo de reconhecimento de fala de propósito geral e multilíngue desenvolvido pela própria OpenAI. A configuração ensinada usa propriedades como (⚠️ **não adicione isto ao seu `application.properties`** — é a configuração da rota OpenAI, que seu projeto não usa; mostrado só para contraste com a seção 6.4):
+
+```properties
+spring.ai.model.audio.transcription=openai
+spring.ai.openai.audio.transcription.options.model=whisper-1
+spring.ai.openai.audio.transcription.options.language=pt
+spring.ai.openai.audio.transcription.options.temperature=0
+spring.ai.openai.audio.transcription.options.response-format=text
+```
+
+### Por que essa rota não existe no projeto Gemini — explicado com cuidado
+
+Este é um dos dois pontos mais importantes de todo o tutorial para entender (o outro é a Parte 7). O `spring-ai-starter-model-google-genai` — o *starter* usado neste projeto desde a Parte 1 — **não implementa a interface `TranscriptionModel`**.
+
+**Por quê?** O Gemini, ao contrário do Whisper, não é um modelo especializado *apenas* em transcrição — ele é um modelo **multimodal** de propósito geral, capaz de receber, em uma mesma conversa, combinações de **texto, imagem, áudio e vídeo**, e gerar uma resposta considerando tudo isso junto. Ou seja, dentro do ecossistema Gemini, "transcrever um áudio" não é uma API tecnicamente separada de "conversar por texto" — é apenas **uma conversa de chat comum, em que uma das mensagens contém um áudio anexado**, acompanhada de um prompt de texto pedindo explicitamente para transcrever esse áudio.
+
+> **O que é "multimodalidade" em IA, explicado do zero?** Um modelo é dito **multimodal** quando consegue processar (ou gerar) mais de um tipo de mídia dentro da mesma interação — por exemplo, receber tanto texto quanto uma imagem, e responder considerando os dois juntos ("descreva o que há nesta foto"). Modelos "unimodais", por outro lado, são especializados em um único tipo de entrada/saída — Whisper, por exemplo, foi treinado especificamente para a tarefa de transcrição de áudio, e nada além disso.
+
+### Passo 1 — Gravar seus próprios áudios de teste
+
+**📁 Local:** `budgeting/src/test/resources/audio/` (pasta nova — crie-a se ainda não existir)
+
+**O que fazer:** grave (com o celular, o gravador do computador, ou qualquer ferramenta simples) **seis áudios curtos**, em português, cada um descrevendo um gasto financeiro com um valor diferente — por exemplo, "gastei oitenta reais no mercado", "paguei quarenta reais de farmácia". Salve cada um no formato `.mp3`, nomeando-os exatamente:
+
+```
+budgeting/src/test/resources/audio/recording-1.mp3
+budgeting/src/test/resources/audio/recording-2.mp3
+budgeting/src/test/resources/audio/recording-3.mp3
+budgeting/src/test/resources/audio/recording-4.mp3
+budgeting/src/test/resources/audio/recording-5.mp3
+budgeting/src/test/resources/audio/recording-6.mp3
+```
+
+**✅ Estes arquivos não vêm de lugar nenhum pronto — são a "matéria-prima" real que o teste do Passo 2 vai transcrever.** Anote, à parte, o valor que você falou em cada gravação (por exemplo, "recording-1.mp3 → falei 80 reais") — você vai precisar disso no Passo 2, para ajustar os valores esperados no teste.
+
+### A solução adotada: <mark style='background:orange'><font color='#000000'><strong>`GoogleGenAiChatModel`</strong></font></mark> + <mark style='background:orange'><font color='#000000'><strong>`Media`</strong></font></mark> — leitura, antes do código
+
+O projeto reaproveita o **mesmo** <mark style='background:orange'><font color='#000000'><strong>`GoogleGenAiChatModel`</strong></font></mark> já usado desde a Parte 3 para conversas normais, mas monta uma mensagem de usuário com **conteúdo multimídia** anexado, usando a classe <mark style='background:orange'><font color='#000000'><strong>`Media`</strong></font></mark> do Spring AI. Este é o padrão que você vai ver, já pronto, no teste do Passo 2 e no controller do Passo 3 — vale entender cada peça antes de criar os arquivos:
+
+```java
+private static final String TRANSCRIPTION_PROMPT = """
+        Transcreva o áudio a seguir com fidelidade em português brasileiro.
+        Contexto do áudio: contém descrição de gastos financeiros.
+        Retorne APENAS a transcrição do áudio.
+        """;
+
+var audioMedia = new Media(MimeTypeUtils.parseMimeType("audio/mpeg"), file.getResource());
+
+var userMessage = UserMessage.builder()
+        .text(TRANSCRIPTION_PROMPT)
+        .media(List.of(audioMedia))
+        .build();
+
+var prompt = Prompt.builder()
+        .messages(List.of(userMessage))
+        .build();
+
+chatModel.call(prompt).getResult().getOutput().getText();
+```
+
+- **`private static final String TRANSCRIPTION_PROMPT = """...""";`** — declara uma constante de classe (`static final`, ou seja, um único valor compartilhado por todas as instâncias, que nunca muda depois de definido) contendo o texto de instrução enviado ao modelo. As três aspas duplas (`"""`) abrem um **text block** — um recurso do Java, disponível desde a versão 15, que permite escrever *strings* que ocupam várias linhas sem precisar concatenar manualmente cada uma delas com `"linha 1\n" + "linha 2\n" + ...` — o texto entre `"""` e `"""` é interpretado literalmente, preservando quebras de linha, tornando prompts longos muito mais legíveis de escrever e revisar.
+- **`new Media(MimeTypeUtils.parseMimeType("audio/mpeg"), file.getResource())`** — cria um objeto `Media`, que empacota, juntos: (1) o **tipo MIME** do conteúdo anexado, e (2) o conteúdo em si, como um `Resource`.
+
+  > **O que é um "tipo MIME", explicado do zero?** MIME (*Multipurpose Internet Mail Extensions*) é um padrão para identificar o **formato/tipo de um arquivo** através de uma string curta e padronizada, no formato `tipo/subtipo` — por exemplo, `text/plain` (texto puro, já visto na Parte 3.4), `application/json` (dados JSON), ou, aqui, `audio/mpeg` (áudio no formato MP3). Esse identificador é usado tanto em requisições/respostas HTTP quanto, como neste caso, para informar a uma IA multimodal **como interpretar** um bloco de bytes anexado — sem essa informação, o Gemini não saberia se aqueles bytes representam um áudio, uma imagem, ou outra coisa.
+  - **`MimeTypeUtils.parseMimeType("audio/mpeg")`** — um método utilitário do Spring que converte a `String` `"audio/mpeg"` em um objeto `MimeType` estruturado, validando que o formato é reconhecível.
+  - **`file.getResource()`** — converte o `MultipartFile` (explicado na seção 6.6) — o arquivo recebido dentro da requisição HTTP — para um `Resource`, o tipo esperado pelo construtor de `Media`.
+- **`UserMessage.builder().text(TRANSCRIPTION_PROMPT).media(List.of(audioMedia)).build()`** — usa, mais uma vez, o **padrão Builder**, cuja regra geral de leitura (rastreando o que cada `.` devolve) já foi explicada em detalhe na Parte 3.4. Vale reforçar aqui, especificamente sobre `UserMessage`, porque este é o primeiro momento em que você vê o *builder* de fato combinando dois tipos de conteúdo diferentes (texto **e** mídia) na mesma cadeia.
+
+  > **`Builder` como classe aninhada, explicado do zero, agora com o exemplo específico de `UserMessage`.** Em Java, é possível declarar uma classe **inteira** dentro do corpo de outra classe — isso é chamado de **classe aninhada** (*nested class*). O código-fonte de `UserMessage`, dentro do `.jar` do Spring AI, tem uma estrutura parecida com esta (simplificada, só para ilustrar a ideia — não é o código-fonte exato e completo da biblioteca):
+  > ```java
+  > public class UserMessage {
+  >     private String text;
+  >     private List<Media> media;
+  >
+  >     // ... outros campos e métodos da UserMessage em si
+  >
+  >     public static class Builder {
+  >         private String text;
+  >         private List<Media> media;
+  >
+  >         public Builder text(String text) {
+  >             this.text = text;
+  >             return this;                 // devolve o próprio builder — permite continuar encadeando
+  >         }
+  >
+  >         public Builder media(List<Media> media) {
+  >             this.media = media;
+  >             return this;
+  >         }
+  >
+  >         public UserMessage build() {
+  >             // aqui, o Builder finalmente cria e devolve um UserMessage de verdade
+  >             return new UserMessage(this.text, this.media);
+  >         }
+  >     }
+  >
+  >     public static Builder builder() {
+  >         return new Builder();
+  >     }
+  > }
+  > ```
+  > `Builder`, aqui, é uma classe declarada **dentro** do corpo da classe `UserMessage` — por isso o nome completo dela é `UserMessage.Builder`, com um ponto separando o nome da classe externa do nome da classe interna. Esse ponto específico, no nome do tipo, **não** é uma chamada de método (diferente dos pontos na cadeia `.text(...).media(...)`) — é a sintaxe do Java para navegar até uma classe aninhada.
+  >
+  > Rastreando o que cada trecho da cadeia devolve, usando essa estrutura como referência:
+  >
+  > | Trecho | O que devolve |
+  > |---|---|
+  > | `UserMessage.builder()` | Chama o método estático `builder()` da classe externa `UserMessage`, que cria e devolve um `new Builder()` — o "montador" ainda vazio |
+  > | `.text(TRANSCRIPTION_PROMPT)` | Chama `text(...)`, um método que **mora na classe `Builder`** — guarda o texto em `this.text` e devolve `this` (o próprio `Builder`, agora com o texto preenchido) |
+  > | `.media(List.of(audioMedia))` | Chama `media(...)`, também um método da classe `Builder` — guarda a lista em `this.media` e devolve `this` de novo (o mesmo `Builder`, agora com texto **e** mídia preenchidos) |
+  > | `.build()` | Chama `build()`, o método que finalmente usa `this.text` e `this.media` acumulados para construir, com `new UserMessage(...)`, o objeto real e definitivo — não mais um `Builder` |
+  >
+  > Ou seja: `.text(...)` e `.media(...)` só podem ser chamados **enquanto você ainda está com o `Builder` em mãos** (antes de `.build()`) justamente porque são métodos que existem **na classe `Builder`**, não na classe `UserMessage` final — depois de `.build()`, o objeto que você tem em mãos é um `UserMessage` de verdade, e `UserMessage` não tem (nem precisa ter) métodos `.text(...)`/`.media(...)` para configurar mais nada, porque já está pronto e imutável.
+
+  E `.media(...)` é sempre **opcional**: toda vez que você usou `chatClient.prompt().user(prompt)` nas Partes 4 e 5, o Spring AI montou uma `UserMessage` só com texto, sem nunca chamar `.media(...)` — a classe já vem preparada, de fábrica, para os dois cenários. `.text(...)` adiciona o prompt de instrução (pedindo a transcrição), e `.media(List.of(audioMedia))` anexa o áudio — essa combinação, em uma única mensagem, é exatamente o que caracteriza a multimodalidade explicada na seção 6.2.
+  - **`List.of(audioMedia)`** — cria uma **lista imutável** (não pode ter itens adicionados ou removidos depois de criada) contendo um único elemento, `audioMedia`. `List.of(...)` é um método de fábrica introduzido no Java moderno para criar listas pequenas e fixas de forma concisa, sem precisar instanciar explicitamente uma `ArrayList` e chamar `.add(...)` em seguida.
+- **`Prompt.builder().messages(List.of(userMessage)).build()`** — monta o `Prompt` final, contendo apenas essa única mensagem multimodal, usando o mesmo padrão Builder já visto (uma forma alternativa ao construtor `new Prompt(texto, options)` usado na Parte 3.4 — aqui, com uma lista de mensagens explícita, em vez de um texto simples).
+- **`chatModel.call(prompt).getResult().getOutput().getText()`** — a mesma cadeia de extração de texto já vista, em detalhe, na Parte 3.4. Repare que, do ponto de vista do código, **não há absolutamente nenhuma diferença estrutural** entre "responder normalmente a uma pergunta de texto" (Parte 3) e "transcrever um áudio" (aqui) — ambos são, para o Spring AI e para o Gemini, apenas "gerar texto a partir de uma mensagem de entrada". A única diferença está no **conteúdo** dessa mensagem de entrada (com ou sem `Media` anexada) e na instrução dada no prompt.
+
+### Criando o teste `GeminiTranscriptionModelIT`
+
+**📁 Arquivo (novo):** `budgeting/src/test/java/dio/budgeting/GeminiTranscriptionModelIT.java`
+
+**O que fazer:** crie este arquivo, dentro de `src/test/...`, com este conteúdo completo. **Antes de colar**, ajuste os valores da coluna direita de cada linha do `@CsvSource` (`80 reais`, `40 reais`, etc.) para bater com o que você **de fato falou** em cada uma das suas seis gravações (Passo 1) — os valores abaixo são só um exemplo:
+
+```java
+package dio.budgeting;
+
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.util.MimeTypeUtils;
+
+import java.io.IOException;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@SpringBootTest
+@EnabledIfEnvironmentVariable(named = "GEMINI_API_KEY", matches = ".+")
+public class GeminiTranscriptionModelIT {
+
+    @Autowired
+    private GoogleGenAiChatModel chatModel;
+
+    @ParameterizedTest
+    @CsvSource({
+            "recording-1.mp3, 80 reais",
+            "recording-2.mp3, 40 reais",
+            "recording-3.mp3, 120 reais",
+            "recording-4.mp3, 90 reais",
+            "recording-5.mp3, 200 reais",
+            "recording-6.mp3, 60 reais"
+    })
+    public void should_containExpectedKeywords_when_audioFilesAreProcessed(String fileName, String expectedKeyword) throws IOException {
+        var recording = new ClassPathResource("audio/" + fileName);
+        assertThat(recording.exists()).isTrue();
+
+        var audioMedia = new Media(MimeTypeUtils.parseMimeType("audio/mpeg"), recording);
+
+        String promptTexto = """
+            Transcreva o áudio a seguir com fidelidade em português brasileiro.
+            Contexto do áudio: contém descrição de gastos financeiros.
+            Retorne APENAS a transcrição do áudio.
+            """;
+
+        var userMessage = UserMessage.builder().text(promptTexto).media(List.of(audioMedia)).build();
+        var prompt = Prompt.builder().messages(List.of(userMessage)).build();
+
+        var result = chatModel.call(prompt).getResult();
+        assertThat(result).isNotNull();
+
+        var output = result.getOutput();
+        assertThat(output).isNotNull();
+
+        var response = output.getText();
+        assertThat(response).isNotNull().isNotEmpty();
+
+        assertThat(response).containsIgnoringCase(expectedKeyword);
+        System.out.println("Arquivo: " + fileName + " -> Transcrição: " + response);
+    }
+}
+```
+
+Explicando as partes novas em relação aos testes das Partes 3 a 5:
+
+- **`@ParameterizedTest`** — em vez de escrever **seis testes** quase idênticos (um para cada arquivo de áudio de exemplo), esta anotação do JUnit 5 instrui o framework a executar o **mesmo método de teste várias vezes**, uma vez para cada linha de dados fornecida (explicada a seguir) — evitando duplicação de código de teste.
+- **`@CsvSource({...})`** — a fonte de dados usada junto de `@ParameterizedTest`: cada `String` dentro das chaves representa uma **linha** de valores separados por vírgula (o formato **CSV**, *Comma-Separated Values*). Para cada linha, o JUnit injeta os valores, na ordem, como argumentos do método de teste — aqui, `fileName` recebe o nome do arquivo (por exemplo, `"recording-1.mp3"`) e `expectedKeyword` recebe a palavra-chave esperada na transcrição (`"80 reais"`).
+- **`public void should_containExpectedKeywords_when_audioFilesAreProcessed(String fileName, String expectedKeyword) throws IOException`** — repare que a assinatura do método já recebe os dois parâmetros que o `@CsvSource` vai preencher a cada execução, na mesma ordem em que aparecem em cada linha do CSV. **`throws IOException`** declara que este método pode lançar essa exceção verificada (ligada a operações de entrada/saída, como ler um arquivo), sem tratá-la internamente — delegando esse tratamento para o próprio framework de testes, que sabe reportar a falha corretamente caso ela ocorra.
+- **`new ClassPathResource("audio/" + fileName)`** — cria um `Resource` (mesma abstração da seção 6.1) apontando para um arquivo dentro do **classpath** — neste caso, `src/test/resources/audio/`, onde você acabou de salvar os seis áudios (Passo 1). `ClassPathResource` é uma das implementações concretas de `Resource`, especializada em localizar arquivos empacotados junto do próprio projeto (em oposição a, por exemplo, um arquivo em um caminho arbitrário do disco).
+- **`assertThat(recording.exists()).isTrue();`** — uma verificação **defensiva**, feita **antes mesmo** de chamar a API do Gemini: confirma que o arquivo de áudio realmente existe no caminho esperado. Isso evita que uma falha por "arquivo não encontrado" (um problema de configuração do teste — por exemplo, um nome de arquivo digitado errado no Passo 1) seja confundida, na hora de investigar uma falha, com uma falha real de transcrição (um problema na integração com a IA) — são causas completamente diferentes, e separar essa verificação ajuda a diagnosticar rapidamente qual delas ocorreu.
+- **A sequência de asserções encadeadas** (`assertThat(result).isNotNull()`, depois `assertThat(output).isNotNull()`, depois `assertThat(response).isNotNull().isNotEmpty()`) — em vez de extrair o texto final em uma única linha (como fizemos na Parte 3.4, com `.getResult().getOutput().getText()` tudo junto), este teste **quebra a cadeia em passos**, verificando a cada passo que o valor intermediário não é nulo. Essa é uma prática de teste mais robusta: se, por exemplo, `result` viesse nulo por algum motivo inesperado, o teste falharia exatamente **naquele ponto**, com uma mensagem de erro clara ("`result` era nulo"), em vez de lançar um `NullPointerException` genérico e menos informativo mais adiante, ao tentar chamar `.getOutput()` sobre um valor nulo.
+- **`.containsIgnoringCase(expectedKeyword)`** — uma variante do `.contains(...)` já visto na Parte 4.2, que ignora diferenças entre maiúsculas e minúsculas ao comparar. Mais uma vez, uma asserção **flexível**, pelo mesmo motivo já discutido nas Partes anteriores: a transcrição gerada por um LLM não é garantidamente idêntica, caractere por caractere, a cada execução — o modelo poderia escrever `"80 Reais"` em vez de `"80 reais"`, por exemplo, e ambas seriam transcrições corretas.
+
+> **Observação sobre um comportamento real dos modelos de fala, útil para você saber de antemão:** tanto no curso (com Whisper) quanto na experiência prática com o Gemini, a transcrição de **números** é um ponto historicamente sensível — o modelo pode optar por escrever um valor **por extenso** ("duzentos reais") em vez de em algarismos ("200 reais"), e isso poderia fazer uma asserção mais rígida falhar mesmo diante de uma transcrição semanticamente correta. É exatamente por isso que o prompt de transcrição é explícito ao dar contexto ao modelo sobre o domínio ("contém descrição de gastos financeiros") — essa informação extra ajuda a guiar o modelo para um formato de saída mais consistente e previsível. Se, ao rodar, algum caso falhar por esse motivo, ajuste o valor esperado no `@CsvSource` para o formato que o Gemini de fato devolveu (visível no `System.out.println` do teste), em vez de tentar forçar um formato específico.
+
+> **📌 Caso real confirmado, para você reconhecer se acontecer com você:** ao seguir este tutorial, dois dos seis casos (correspondentes a valores maiores — "200 reais" e "60 reais") falharam exatamente por esse motivo. A investigação, feita através do relatório de testes do Gradle (explicado no quadro seguinte), revelou que o Gemini havia transcrito o áudio como:
+> ```
+> "Saí para jantar ontem e a conta ficou duzentos reais por pessoa."
+> ```
+> — uma transcrição **perfeitamente correta e fiel** ao áudio, só que com o valor por extenso. A correção foi simplesmente trocar, na linha correspondente do `@CsvSource`, `"200 reais"` por `"duzentos reais"` — sem nenhuma alteração de código. Isso não é um defeito do seu teste nem do seu código: é o comportamento normal e esperado de um modelo de linguagem gerando texto livre, e é exatamente por isso que a asserção usa `.containsIgnoringCase(...)` em vez de uma comparação exata (seção 6.5) — ela é tolerante a variações razoáveis, mas não prevê automaticamente qual formato específico o modelo vai escolher a cada execução.
+
+> **💡 Dica prática — "No matching tests found" ao rodar um teste recém-criado.** Se, ao rodar `./gradlew test --tests "dio.budgeting.NomeDoTeste"` logo após criar o arquivo, o Gradle responder com `No matching tests found in any candidate test task`, mesmo com o `package` e o nome da classe corretos, isso costuma ser um cache de build desatualizado (o Gradle ainda não "viu" o arquivo novo). Force uma recompilação completa antes de rodar o teste de novo:
+> ```bash
+> ./gradlew clean compileTestJava
+> ./gradlew test --tests "dio.budgeting.NomeDoTeste"
+> ```
+> Se `clean compileTestJava` terminar com `BUILD SUCCESSFUL`, isso também confirma, de uma vez, que o pacote, o nome da classe e todos os `import`s (incluindo `@ParameterizedTest`/`@CsvSource`, que dependem do módulo `junit-jupiter-params`, normalmente já incluído transitivamente pelo `spring-boot-starter-test`) estão corretos.
+
+> **🔎 Como investigar a transcrição real de um caso que falhou, passo a passo.** A asserção que falha é a última do método (`assertThat(response).containsIgnoringCase(expectedKeyword);`) — como ela vem **antes** do `System.out.println`, o texto transcrito não chega a ser impresso no console para os casos que falham. Para ver o valor real, o caminho mais direto é abrir o relatório HTML que o próprio Gradle gera e aponta ao final da execução com falha (`file:///.../build/reports/tests/test/index.html`), navegar até a classe → o método → o caso específico que falhou (por exemplo, `[5] fileName = "recording-5.mp3", ...`), e ler a mensagem de erro do AssertJ na seção "Failure details" — ela sempre mostra o texto real (`"Expecting actual: ..."`) ao lado do valor esperado. Uma alternativa mais rápida, sem navegar por vários níveis de link, é abrir diretamente o arquivo XML gerado em `budgeting/build/test-results/test/TEST-NomeDoTeste.xml`, que traz todas as mensagens de falha em um único arquivo.
+
+### **Rodando este teste agora**, antes de seguir para o Passo 3
+
+São seis execuções (uma por linha do `@CsvSource`); confira, no relatório do JUnit (pela IDE, é a forma mais clara), que todas as seis passaram.
+
+Resultado do processamento:
+
+```log
+> Task :compileJava UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :compileTestJava UP-TO-DATE
+> Task :processTestResources UP-TO-DATE
+> Task :testClasses UP-TO-DATE
+15:55:09.076 [Test worker] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [dio.budgeting.GeminiTranscriptionModelIT]: GeminiTranscriptionModelIT does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+15:55:09.245 [Test worker] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration dio.budgeting.BudgetingApplication for test class dio.budgeting.GeminiTranscriptionModelIT
+15:55:09.334 [Test worker] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [dio.budgeting.GeminiTranscriptionModelIT]: GeminiTranscriptionModelIT does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+15:55:09.336 [Test worker] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration dio.budgeting.BudgetingApplication for test class dio.budgeting.GeminiTranscriptionModelIT
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.1.0)
+
+2026-08-20T15:55:09.718-03:00  INFO 21929 --- [budgeting] [    Test worker] d.budgeting.GeminiTranscriptionModelIT   : Starting GeminiTranscriptionModelIT using Java 21.0.11 with PID 21929 (started by arthur in /mnt/storage_02/Backup_USB2/Backup_Github/budgeting-spring-ai-gemini/budgeting)
+2026-08-20T15:55:09.720-03:00  INFO 21929 --- [budgeting] [    Test worker] d.budgeting.GeminiTranscriptionModelIT   : No active profile set, falling back to 1 default profile: "default"
+2026-08-20T15:55:10.742-03:00 DEBUG 21929 --- [budgeting] [    Test worker] o.s.a.m.t.a.ToolCallingAutoConfiguration : Cannot load class: org.springframework.security.oauth2.client.ClientAuthorizationException
+2026-08-20T15:55:11.260-03:00  INFO 21929 --- [budgeting] [    Test worker] d.budgeting.GeminiTranscriptionModelIT   : Started GeminiTranscriptionModelIT in 1.821 seconds (process running for 3.215)
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
+WARNING: A Java agent has been loaded dynamically (/home/arthur/.gradle/caches/modules-2/files-2.1/net.bytebuddy/byte-buddy-agent/1.18.10/9426d28828bdcdf42666bb7a68c468279ea78f59/byte-buddy-agent-1.18.10.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+Arquivo: recording-1.mp3 -> Transcrição: Fui na farmácia rapidinho e deixei 80 reais em três itens.
+
+
+Expecting actual:
+  "Fui comprar pão e acabei gastando R$ 40 na padaria."
+to contain:
+  "40 reais"
+ (ignoring case)
+java.lang.AssertionError: 
+Expecting actual:
+  "Fui comprar pão e acabei gastando R$ 40 na padaria."
+to contain:
+  "40 reais"
+ (ignoring case)
+	at dio.budgeting.GeminiTranscriptionModelIT.should_containExpectedKeywords_when_audioFilesAreProcessed(GeminiTranscriptionModelIT.java:60)
+
+Arquivo: recording-3.mp3 -> Transcrição: Pedi um delivery agora e a conta deu 120 reais com a taxa.
+Arquivo: recording-4.mp3 -> Transcrição: Fui no cinema com um combo de pipoca e gastei 90 reais sozinho.
+
+
+Expecting actual:
+  "Saí para jantar ontem e a conta ficou duzentos reais por pessoa."
+to contain:
+  "200 reais"
+ (ignoring case)
+java.lang.AssertionError: 
+Expecting actual:
+  "Saí para jantar ontem e a conta ficou duzentos reais por pessoa."
+to contain:
+  "200 reais"
+ (ignoring case)
+	at dio.budgeting.GeminiTranscriptionModelIT.should_containExpectedKeywords_when_audioFilesAreProcessed(GeminiTranscriptionModelIT.java:60)
+
+
+
+Expecting actual:
+  "Paguei sessenta reais de estacionamento hoje. Um absurdo."
+to contain:
+  "60 reais"
+ (ignoring case)
+java.lang.AssertionError: 
+Expecting actual:
+  "Paguei sessenta reais de estacionamento hoje. Um absurdo."
+to contain:
+  "60 reais"
+ (ignoring case)
+	at dio.budgeting.GeminiTranscriptionModelIT.should_containExpectedKeywords_when_audioFilesAreProcessed(GeminiTranscriptionModelIT.java:60)
+
+
+
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+> Task :test
+GeminiTranscriptionModelIT > should_containExpectedKeywords_when_audioFilesAreProcessed(String, String) > [2] fileName = "recording-2.mp3", expectedKeyword = "40 reais" FAILED
+    java.lang.AssertionError at GeminiTranscriptionModelIT.java:60
+GeminiTranscriptionModelIT > should_containExpectedKeywords_when_audioFilesAreProcessed(String, String) > [5] fileName = "recording-5.mp3", expectedKeyword = "200 reais" FAILED
+    java.lang.AssertionError at GeminiTranscriptionModelIT.java:60
+GeminiTranscriptionModelIT > should_containExpectedKeywords_when_audioFilesAreProcessed(String, String) > [6] fileName = "recording-6.mp3", expectedKeyword = "60 reais" FAILED
+    java.lang.AssertionError at GeminiTranscriptionModelIT.java:60
+6 tests completed, 3 failed
+> Task :test FAILED
+FAILURE: Build failed with an exception.
+* What went wrong:
+Execution failed for task ':test'.
+> There were failing tests. See the report at: file:///mnt/storage_02/Backup_USB2/Backup_Github/budgeting-spring-ai-gemini/budgeting/build/reports/tests/test/index.html
+* Try:
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+BUILD FAILED in 44s
+5 actionable tasks: 1 executed, 4 up-to-date
+```
+
+### Análise do log — `GeminiTranscriptionModelIT`
+
+#### Bloco 1 a 4 — Compilação, contexto e avisos, sem novidade
+
+Os quatro primeiros blocos (tarefas `UP-TO-DATE`, descoberta do contexto de configuração via `AnnotationConfigContextLoaderUtils`/`SpringBootTestContextBootstrapper`, banner do Spring Boot com o contexto subindo em `1.821` segundos sem exceções, e os avisos do Mockito) seguem exatamente o mesmo padrão já documentado nas análises anteriores (`GeminiChatClientIT`, `ToolCallingIT`) — nenhuma novidade estrutural aqui, e nenhum indício de problema.
+
+#### Bloco 5 — As seis transcrições, uma por uma
+
+Diferente dos testes anteriores (que rodavam **uma única vez**), este é um `@ParameterizedTest`, então o log mistura, na ordem em que cada execução termina, tanto os `System.out.println` de sucesso quanto as mensagens de erro dos casos que falharam:
+
+| Arquivo | Palavra-chave esperada | Transcrição real (Gemini) | Resultado |
+|---|---|---|---|
+| `recording-1.mp3` | `"80 reais"` | *"Fui na farmácia rapidinho e deixei 80 reais em três itens."* | ✅ Passou |
+| `recording-2.mp3` | `"40 reais"` | *"Fui comprar pão e acabei gastando R$ 40 na padaria."* | ❌ Falhou |
+| `recording-3.mp3` | `"120 reais"` | *"Pedi um delivery agora e a conta deu 120 reais com a taxa."* | ✅ Passou |
+| `recording-4.mp3` | `"90 reais"` | *"Fui no cinema com um combo de pipoca e gastei 90 reais sozinho."* | ✅ Passou |
+| `recording-5.mp3` | `"200 reais"` | *"Saí para jantar ontem e a conta ficou duzentos reais por pessoa."* | ❌ Falhou |
+| `recording-6.mp3` | `"60 reais"` | *"Paguei sessenta reais de estacionamento hoje. Um absurdo."* | ❌ Falhou |
+
+**Observação importante sobre o `recording-2.mp3` — um padrão de falha *diferente* dos outros dois:**
+
+Este caso **não** é o mesmo problema de "número por extenso" já documentado (Caso real confirmado, acima). O Gemini transcreveu `"R$ 40"` — em algarismos, com o símbolo de moeda —, enquanto a palavra-chave esperada era `"40 reais"` (o valor seguido da palavra "reais", por extenso). `.containsIgnoringCase("40 reais")` não encontra essa combinação exata dentro de `"R$ 40"`, mesmo os dois representando o mesmo valor.
+
+**Isso confirma que existe uma segunda variação legítima de formato, além da já documentada:** o Gemini pode transcrever um valor monetário de **pelo menos três formas diferentes**, todas corretas:
+1. Em algarismos + "reais" por extenso — `"40 reais"` (o formato que passou em `recording-1`, `3`, `4`).
+2. Em algarismos + símbolo de moeda — `"R$ 40"` (o formato de `recording-2`).
+3. Totalmente por extenso — `"duzentos reais"`, `"sessenta reais"` (o formato de `recording-5` e `recording-6`).
+
+#### Bloco 6 — Resultado final
+
+```
+6 tests completed, 3 failed
+```
+
+Metade dos casos falhou — mais do que as duas falhas já documentadas anteriormente no "Caso real confirmado" (`recording-5` e `recording-6`), porque desta vez `recording-2` **também** falhou, por um motivo de formato ligeiramente diferente (símbolo de moeda, não número por extenso).
+
+### ✅ Conclusão da análise
+
+As três falhas **não são bugs de código** — são, mais uma vez, diferenças de **formato de saída do modelo**, e não de conteúdo semântico: todas as seis transcrições estão corretas e fiéis aos áudios originais. A correção segue exatamente o procedimento já documentado (seção "Caso real confirmado" acima): ajustar cada linha do `@CsvSource` para o formato real observado —
+
+```java
+"recording-2.mp3, R$ 40",
+"recording-5.mp3, duzentos reais",
+"recording-6.mp3, sessenta reais",
+```
+
+— sem nenhuma alteração de código de produção. Este resultado reforça, com um caso a mais (o do símbolo `R$`), a lição central da Parte 6: a saída de um LLM em linguagem natural livre não é determinística em formato, mesmo quando é semanticamente sempre correta — e é exatamente por isso que a asserção usa `.containsIgnoringCase(...)`, tolerante a variação, em vez de qualquer comparação exata.
+
+| Item | Status |
+|---|---|
+| `GeminiTranscriptionModelIT` — executado; 3 de 6 casos falharam por variação de formato (não bug), causas identificadas e documentadas | ✅ |
+| Ajuste do `@CsvSource` (3 linhas: `recording-2`, `recording-5`, `recording-6`) para os formatos reais confirmados | Pendente de reexecução para confirmação final |
+
+### `MultipartFile`: recebendo um arquivo de verdade por HTTP, explicado do zero — leitura, antes do código
+
+Antes de criar o controller do Passo 3, vale entender a peça que falta: como um arquivo de áudio chega até a aplicação através de uma requisição HTTP (diferente do teste do Passo 2, que lê o áudio direto do *classpath*).
+
+```java
+@PostMapping(value = "/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+String transcribe(@RequestParam("file") MultipartFile file) { ... }
+```
+
+- **`@PostMapping`**, em vez de `@GetMapping` (visto nas Partes 3 e 4) — usa o verbo HTTP **`POST`**, adequado aqui porque estamos **enviando dados relativamente grandes** (um arquivo de áudio) para o servidor processar, e não apenas pedindo para "buscar" algo através de parâmetros simples na URL (o que seria o uso típico de `GET`).
+- **`consumes = MediaType.MULTIPART_FORM_DATA_VALUE`** — o atributo `consumes` declara qual **tipo de conteúdo** (`Content-Type`) este endpoint aceita receber no corpo da requisição. `MediaType.MULTIPART_FORM_DATA_VALUE` é uma constante que representa a *string* `"multipart/form-data"` — o formato padrão usado por navegadores e ferramentas HTTP para enviar **arquivos binários** dentro de uma requisição (diferente de `application/json`, adequado para dados textuais estruturados, mas não para arquivos brutos).
+
+  > **O que é "multipart/form-data", explicado do zero?** É um formato de corpo de requisição HTTP desenhado especificamente para permitir o envio de **múltiplas partes** de dados diferentes em uma única requisição — cada parte pode ser um campo de texto simples, ou um arquivo binário completo, cada uma identificada por um nome. É o mesmo mecanismo usado, por exemplo, quando você anexa um arquivo em um formulário web tradicional.
+- **`@RequestParam("file") MultipartFile file`** — diferente do `@RequestParam` visto na Parte 4.3 (que lia um parâmetro de *query string*), aqui ele associa este parâmetro à **parte** da requisição multipart cujo nome é `"file"` — ou seja, quem chama este endpoint precisa enviar um campo chamado exatamente `file` dentro do corpo `multipart/form-data`.
+- **`MultipartFile`** — a abstração do Spring Web especificamente pensada para representar um arquivo recebido dentro de uma requisição multipart. Ela oferece métodos como `getBytes()` (o conteúdo bruto como array de bytes) ou `getInputStream()` (um fluxo de leitura) — e, como já vimos, também `getResource()` (seção 6.4), que converte esse arquivo recebido diretamente em um `Resource` do Spring, pronto para ser usado em qualquer lugar que espere essa abstração mais genérica (como o construtor de `Media`).
+
+### Criando `TranscriptionController` (versão inicial)
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/TranscriptionController.java`
+
+
+```java
+package dio.budgeting;
+
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.http.MediaType;
+import org.springframework.util.MimeTypeUtils;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api")
+public class TranscriptionController {
+
+    private static final String TRANSCRIPTION_PROMPT = """
+            Transcreva o áudio a seguir com fidelidade em português brasileiro.
+            Contexto do áudio: contém descrição de gastos financeiros.
+            Retorne APENAS a transcrição do áudio.
+            """;
+
+    private final GoogleGenAiChatModel chatModel;
+
+    public TranscriptionController(GoogleGenAiChatModel chatModel) {
+        this.chatModel = chatModel;
+    }
+
+    @PostMapping(value = "/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    String transcribe(@RequestParam("file") MultipartFile file) {
+        var audioMedia = new Media(MimeTypeUtils.parseMimeType("audio/mpeg"), file.getResource());
+
+        var userMessage = UserMessage.builder()
+                .text(TRANSCRIPTION_PROMPT)
+                .media(List.of(audioMedia))
+                .build();
+
+        var prompt = Prompt.builder()
+                .messages(List.of(userMessage))
+                .build();
+
+        return chatModel.call(prompt).getResult().getOutput().getText();
+    }
+
+}
+```
+
+**✅ Este é o arquivo completo — por enquanto.** Ele será **reaberto e substituído por uma versão mais completa** na Parte 11, ganhando mais duas dependências injetadas, um construtor maior, e dois métodos novos (`readTransactions` e `processAudio`). Não se preocupe em deixá-lo "definitivo" agora — o padrão de injeção via construtor (`GoogleGenAiChatModel chatModel`, já explicado em detalhe na Parte 3.6) é o mesmo que você já domina.
+
+**Testando manualmente**, com a aplicação rodando — este endpoint recebe um arquivo, então o `curl` precisa de uma sintaxe diferente dos anteriores (com `-F`, indicando um campo de formulário do tipo arquivo):
+
+```bash
+curl -X POST "http://localhost:8080/api/transcribe" \
+  -F "file=@src/test/resources/audio/recording-1.mp3;type=audio/mpeg"
+```
+
