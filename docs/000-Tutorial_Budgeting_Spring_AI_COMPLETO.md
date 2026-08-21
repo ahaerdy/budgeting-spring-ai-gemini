@@ -336,48 +336,6 @@ E, no `-classpath` impresso pelo IntelliJ, confira que aparecem `.jar`s como `sp
 
 **Recapitulando:** temos um projeto Spring Boot mínimo, capaz de subir sozinho, com a *dependência* de IA já resolvida e a *chave de autenticação* já configurada — mas ainda **nenhuma linha de código nossa** usa efetivamente o Gemini. É exatamente isso que a Parte 3 resolve.
 
-### Resultado da execução de `BudgetingApplicationTests`
-
-```log
-Starting Gradle Daemon...
-Gradle Daemon started in 2 s 120 ms
-> Task :compileJava UP-TO-DATE
-> Task :processResources UP-TO-DATE
-> Task :classes UP-TO-DATE
-> Task :compileTestJava UP-TO-DATE
-> Task :processTestResources UP-TO-DATE
-> Task :testClasses UP-TO-DATE
-14:56:52.604 [Test worker] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [dio.budgeting.BudgetingApplicationTests]: BudgetingApplicationTests does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
-14:56:52.791 [Test worker] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration dio.budgeting.BudgetingApplication for test class dio.budgeting.BudgetingApplicationTests
-14:56:52.894 [Test worker] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [dio.budgeting.BudgetingApplicationTests]: BudgetingApplicationTests does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
-14:56:52.896 [Test worker] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration dio.budgeting.BudgetingApplication for test class dio.budgeting.BudgetingApplicationTests
-
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
-
- :: Spring Boot ::                (v4.1.0)
-
-2026-08-17T14:56:53.246-03:00  INFO 108691 --- [budgeting] [    Test worker] d.budgeting.BudgetingApplicationTests    : Starting BudgetingApplicationTests using Java 21.0.11 with PID 108691 (started by arthur in /mnt/storage_02/Backup_USB2/Backup_Github/budgeting-spring-ai-gemini/budgeting)
-2026-08-17T14:56:53.248-03:00  INFO 108691 --- [budgeting] [    Test worker] d.budgeting.BudgetingApplicationTests    : No active profile set, falling back to 1 default profile: "default"
-2026-08-17T14:56:54.335-03:00 DEBUG 108691 --- [budgeting] [    Test worker] o.s.a.m.t.a.ToolCallingAutoConfiguration : Cannot load class: org.springframework.security.oauth2.client.ClientAuthorizationException
-2026-08-17T14:56:54.937-03:00  INFO 108691 --- [budgeting] [    Test worker] d.budgeting.BudgetingApplicationTests    : Started BudgetingApplicationTests in 1.954 seconds (process running for 3.561)
-Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
-WARNING: A Java agent has been loaded dynamically (/home/arthur/.gradle/caches/modules-2/files-2.1/net.bytebuddy/byte-buddy-agent/1.18.10/9426d28828bdcdf42666bb7a68c468279ea78f59/byte-buddy-agent-1.18.10.jar)
-WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
-WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
-WARNING: Dynamic loading of agents will be disallowed by default in a future release
-OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
-> Task :test
-BUILD SUCCESSFUL in 17s
-5 actionable tasks: 1 executed, 4 up-to-date
-Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.5.1/userguide/configuration_cache_enabling.html
-14:56:56: Execution finished ':test --tests "dio.budgeting.BudgetingApplicationTests"'.
-```
-
 
 ---
 
@@ -1426,18 +1384,21 @@ Já sabemos transformar áudio em texto (Parte 6). Agora vamos fechar o outro ex
 
 Implementar a síntese de voz (*Text-to-Speech*, ou TTS), o passo final do pipeline completo de ponta a ponta.
 
-> **📁 Arquivos desta etapa:**
-> 1. **Criar** `src/test/java/dio/budgeting/GeminiSpeechModelIT.java` — o teste (seção 7.6), que salva o áudio gerado em um arquivo temporário para você ouvir manualmente.
-> 2. **Criar** `src/main/java/dio/budgeting/TextToSpeechService.java` — o `@Service` com o SDK nativo do Gemini e a montagem do WAV (seção 7.3/7.4).
-> 3. **Criar** `src/main/java/dio/budgeting/TextToSpeechController.java` — o endpoint `POST /api/synthesize` (seção 7.5), que já injeta o serviço do passo 2.
->
-> Nenhuma dependência nova no `build.gradle` — o SDK `com.google.genai.Client` já veio, de forma transitiva, junto do starter do Gemini desde a Parte 1 (você já viu `google-genai-1.58.0.jar` no seu classpath, no checkpoint da Parte 1/2).
+### Visão geral desta etapa — os 3 passos, em ordem
 
-### 7.1. O caminho ensinado no curso: `TextToSpeechModel` (OpenAI)
+| Passo | Ação | Arquivo |
+|---|---|---|
+| 1 | Criar o teste de integração | `budgeting/src/test/java/dio/budgeting/GeminiSpeechModelIT.java` |
+| 2 | Criar o serviço | `budgeting/src/main/java/dio/budgeting/TextToSpeechService.java` |
+| 3 | Criar o controller | `budgeting/src/main/java/dio/budgeting/TextToSpeechController.java` |
+
+Mesma lógica "testar antes de expor" das Partes anteriores: primeiro o teste (Passo 1), validando isoladamente que a síntese de voz funciona via SDK nativo; depois o serviço (Passo 2), que empacota essa mesma lógica de forma reutilizável; por último o controller (Passo 3), que expõe o serviço via HTTP. Nenhuma dependência nova no `build.gradle` — o SDK `com.google.genai.Client` já veio, de forma transitiva, junto do starter do Gemini desde a Parte 1 (você já viu `google-genai-1.58.0.jar` no seu classpath, no checkpoint da Parte 1/2).
+
+### 7.1. O caminho ensinado no curso: `TextToSpeechModel` (OpenAI) — leitura, antes do código
 
 Assim como para transcrição (Parte 6.1), o Spring AI define uma interface comum para síntese de voz:
 
-> **⚠️ Não crie nenhum arquivo para este bloco — mesma situação da Parte 6.1: sem implementação para o Gemini.** Mostrado apenas para contexto; a solução real está na seção 7.3.
+> **⚠️ Não crie nenhum arquivo para este bloco — mesma situação da Parte 6.1: sem implementação para o Gemini.** Mostrado apenas para contexto; a solução real está na seção 7.4.
 
 ```java
 public interface TextToSpeechModel extends Model<TextToSpeechPrompt, TextToSpeechResponse>, StreamingTextToSpeechModel {
@@ -1458,11 +1419,148 @@ Pela mesma razão discutida em detalhe na Parte 6.2: o `spring-ai-starter-model-
 
 ### 7.3. A solução adotada: o SDK nativo `com.google.genai.Client`, explicado com cuidado
 
-Em vez de depender de uma interface do Spring AI que simplesmente não cobre este caso, o projeto usa diretamente o **SDK Java oficial do Google GenAI** — a mesma biblioteca de baixo nível que, por baixo dos panos, o próprio `spring-ai-starter-model-google-genai` usa para implementar o `GoogleGenAiChatModel` que já conhecemos desde a Parte 3. Isso é feito de forma isolada em uma nova classe, `TextToSpeechService`.
+Em vez de depender de uma interface do Spring AI que simplesmente não cobre este caso, o projeto usa diretamente o **SDK Java oficial do Google GenAI** — a mesma biblioteca de baixo nível que, por baixo dos panos, o próprio `spring-ai-starter-model-google-genai` usa para implementar o `GoogleGenAiChatModel` que já conhecemos desde a Parte 3.
 
 > **Por que isso é possível — e por que não é "trapaça"?** Um *starter* do Spring AI, por baixo dos panos, sempre depende de alguma biblioteca de mais baixo nível que sabe conversar de fato com a API do provedor (autenticação, formato de requisição HTTP específico, etc.). No caso do Gemini, essa biblioteca de baixo nível é o `google-genai` (o mesmo `.jar` que apareceu no seu classpath já na Parte 1.8). O Spring AI **usa** essa biblioteca para implementar suas interfaces (`ChatModel`, e assim por diante), mas nada impede a própria aplicação de usar essa mesma biblioteca **diretamente**, para funcionalidades que o Spring AI ainda não "encapsulou" em uma interface própria — que é exatamente o caso aqui.
 
-Vamos ver a classe inteira, e depois cada trecho em detalhe:
+### 7.4. Passo 1 — Criar o teste `GeminiSpeechModelIT`
+
+**📁 Arquivo (novo):** `budgeting/src/test/java/dio/budgeting/GeminiSpeechModelIT.java`
+
+**O que fazer:** crie este arquivo, dentro de `src/test/...`, com este conteúdo completo:
+
+```java
+package dio.budgeting;
+
+import com.google.genai.Client;
+import com.google.genai.types.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.test.context.SpringBootTest;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@SpringBootTest
+@EnabledIfEnvironmentVariable(named = "GEMINI_API_KEY", matches = ".+")
+public class GeminiSpeechModelIT {
+
+    @Value("${spring.ai.google.genai.api-key}")
+    private String apiKey;
+
+    @Test
+    void should_generateAudio_when_textIsSynthesized() throws IOException {
+        var client = Client.builder().apiKey(apiKey).build();
+
+        GenerateContentConfig config = GenerateContentConfig.builder()
+                .responseModalities("AUDIO")
+                .speechConfig(SpeechConfig.builder()
+                        .voiceConfig(VoiceConfig.builder()
+                                .prebuiltVoiceConfig(PrebuiltVoiceConfig.builder()
+                                        .voiceName("Kore")
+                                        .build())
+                                .build())
+                        .build())
+                .build();
+
+        GenerateContentResponse response = client.models.generateContent(
+                "gemini-2.5-flash-preview-tts",
+                "Sua transação de oitenta reais na farmácia foi registrada com sucesso.",
+                config
+        );
+
+        List<Part> parts = response.candidates()
+                .flatMap(candidates -> candidates.stream().findFirst())
+                .flatMap(Candidate::content)
+                .flatMap(Content::parts)
+                .orElse(new ArrayList<>());
+
+        byte[] pcmAudio = parts.stream()
+                .map(part -> part.inlineData().flatMap(Blob::data))
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Nenhum áudio retornado pelo Gemini"));
+
+        assertThat(pcmAudio).hasSizeGreaterThan(1024);
+
+        byte[] wavAudio = wrapPcmAsWav(pcmAudio, 24000, 1, 16);
+
+        Path tempFile = Files.createTempFile("AUDIO_", ".wav");
+        Files.write(tempFile, wavAudio);
+        System.out.println(tempFile.toAbsolutePath());
+
+        client.close();
+    }
+
+    private static byte[] wrapPcmAsWav(byte[] pcmData, int sampleRate, int channels, int bitsPerSample)
+            throws IOException {
+        int byteRate = sampleRate * channels * bitsPerSample / 8;
+        int blockAlign = channels * bitsPerSample / 8;
+        int dataSize = pcmData.length;
+
+        ByteBuffer header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
+        header.put("RIFF".getBytes());
+        header.putInt(36 + dataSize);
+        header.put("WAVE".getBytes());
+        header.put("fmt ".getBytes());
+        header.putInt(16);
+        header.putShort((short) 1);
+        header.putShort((short) channels);
+        header.putInt(sampleRate);
+        header.putInt(byteRate);
+        header.putShort((short) blockAlign);
+        header.putShort((short) bitsPerSample);
+        header.put("data".getBytes());
+        header.putInt(dataSize);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(header.array());
+        out.write(pcmData);
+        return out.toByteArray();
+    }
+}
+```
+
+**✅ Este é o arquivo completo.**
+
+> **Por que este teste "duplica" a lógica que o `TextToSpeechService` (Passo 2) também vai ter, em vez de reaproveitá-lo?** Porque, na ordem de construção deste tutorial, o teste **antecede** a criação do serviço — assim como nas Partes anteriores, valida-se a integração crua com o SDK antes de organizá-la em uma classe reutilizável. Esse teste, propositalmente, chama o SDK diretamente (`Client.builder()...`), sem depender de nenhuma classe de produção do projeto — o que o torna útil como uma verificação **independente**, mesmo que `TextToSpeechService` venha a mudar no futuro. Repare que o corpo de `wrapPcmAsWav(...)` é **idêntico** ao que você vai ver no serviço, na seção 7.6 — é o mesmo algoritmo, explicado em detalhe na seção 7.5, só que colado localmente no teste, em vez de reaproveitado por composição.
+
+Explicando as partes que ainda não apareceram em nenhum teste anterior do tutorial:
+
+- **`@Value("${spring.ai.google.genai.api-key}") private String apiKey;`** — diferente da injeção de *bean* completo (`@Autowired`) usada em todos os testes anteriores, aqui a anotação `@Value` é aplicada sobre um **campo**, injetando apenas o **valor** de uma propriedade de configuração — a mesma chave já configurada para o `GoogleGenAiChatModel` desde a Parte 1.7, reaproveitada aqui. (A explicação completa de `@Value`, incluindo por que ela difere de `@Autowired`, está na seção 7.5, quando ela reaparece no construtor do `TextToSpeechService`.)
+- **`var client = Client.builder().apiKey(apiKey).build();`** — cria o cliente de baixo nível do SDK do Google GenAI diretamente no corpo do teste — o mesmo tipo de objeto que, no serviço da seção 7.5, é criado uma única vez no construtor e reaproveitado.
+- **`GenerateContentConfig`, `SpeechConfig`, `VoiceConfig`, `PrebuiltVoiceConfig`** e a cadeia de extração via `Optional`/`flatMap` — a explicação completa de cada uma dessas peças está na seção 7.5, já que o código é idêntico ao que aparece no serviço; para não repetir, a análise linha a linha fica concentrada lá.
+- **`assertThat(pcmAudio).hasSizeGreaterThan(1024);`** — confirma apenas que **algum** áudio de tamanho razoável foi recebido (mais de 1024 bytes) — não valida o conteúdo sonoro em si (isso é feito manualmente, a seguir).
+- **`Files.createTempFile("AUDIO_", ".wav")`** — um método utilitário do Java (`java.nio.file.Files`) que cria um arquivo temporário no diretório padrão do sistema operacional para esse fim (em Linux, tipicamente `/tmp`), com um nome único gerado automaticamente (combinando o prefixo `AUDIO_` e o sufixo `.wav` com uma parte aleatória, evitando colisão com outros arquivos).
+- **`Files.write(tempFile, wavAudio)`** — escreve o array de bytes do áudio já montado (com o cabeçalho WAV) nesse arquivo temporário recém-criado.
+- **`System.out.println(tempFile.toAbsolutePath());`** — imprime o caminho absoluto do arquivo no console, para você conseguir localizá-lo depois.
+- **`client.close();`** — libera os recursos do cliente ao final do teste (o mesmo cuidado que, no serviço, é feito automaticamente via `@PreDestroy`, seção 7.5).
+
+**Como validar este teste — passo a passo, incluindo a checagem auditiva manual:**
+
+1. Rode o teste (pela IDE, ou `./gradlew test --tests "dio.budgeting.GeminiSpeechModelIT"`).
+2. Confirme `BUILD SUCCESSFUL` — isso já garante que a asserção `hasSizeGreaterThan(1024)` passou.
+3. **Copie o caminho impresso no console** (a linha que `System.out.println(tempFile.toAbsolutePath())` produziu — algo como `/tmp/AUDIO_1234567890.wav`).
+4. **Abra esse arquivo em qualquer player de áudio** (arrastando para o player, ou abrindo pelo gerenciador de arquivos do seu sistema operacional) e **ouça o resultado**. Confirme que a fala corresponde ao texto enviado no teste ("Sua transação de oitenta reais na farmácia foi registrada com sucesso.").
+
+Esta é a única forma de validação **auditiva** deste tutorial — nenhuma asserção automatizada consegue confirmar que o áudio soa corretamente; só os seus ouvidos podem.
+
+### 7.5. Passo 2 — Criar `TextToSpeechService`
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/TextToSpeechService.java`
+
+**O que fazer:** crie este arquivo, dentro de `src/main/java/dio/budgeting/`, com este conteúdo completo:
 
 ```java
 package dio.budgeting;
@@ -1542,9 +1640,37 @@ public class TextToSpeechService {
 
         return wrapPcmAsWav(pcmAudio, 24000, 1, 16);
     }
-    // ... wrapPcmAsWav explicado na seção 7.4
+
+    private static byte[] wrapPcmAsWav(byte[] pcmData, int sampleRate, int channels, int bitsPerSample)
+            throws IOException {
+        int byteRate = sampleRate * channels * bitsPerSample / 8;
+        int blockAlign = channels * bitsPerSample / 8;
+        int dataSize = pcmData.length;
+
+        ByteBuffer header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
+        header.put("RIFF".getBytes());
+        header.putInt(36 + dataSize);
+        header.put("WAVE".getBytes());
+        header.put("fmt ".getBytes());
+        header.putInt(16);
+        header.putShort((short) 1);
+        header.putShort((short) channels);
+        header.putInt(sampleRate);
+        header.putInt(byteRate);
+        header.putShort((short) blockAlign);
+        header.putShort((short) bitsPerSample);
+        header.put("data".getBytes());
+        header.putInt(dataSize);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(header.array());
+        out.write(pcmData);
+        return out.toByteArray();
+    }
 }
 ```
+
+**✅ Este é o arquivo completo.**
 
 Agora, linha por linha:
 
@@ -1595,44 +1721,13 @@ Agora, linha por linha:
   - **`.map(Optional::get)`** — "desembrulha" cada `Optional` restante, extraindo o `byte[]` de dentro dele.
   - **`.findFirst()`** — pega o primeiro item da lista já filtrada — devolvendo, mais uma vez, um `Optional<byte[]>` (vazio, se a lista estivesse vazia).
   - **`.orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "..."))`** — se **nenhuma** parte continha áudio (um cenário inesperado, mas possível — por exemplo, se a API do Gemini tivesse uma falha momentânea), lança uma exceção HTTP `500` (`INTERNAL_SERVER_ERROR`, "erro interno do servidor" — diferente do `400` visto antes, já que este erro não é culpa de quem fez a requisição, mas de algo que deu errado do lado do servidor/provedor), com uma mensagem clara sobre a causa.
-- **`return wrapPcmAsWav(pcmAudio, 24000, 1, 16);`** — finalmente, os bytes de áudio extraídos (ainda em formato bruto, chamado PCM) são passados para um método auxiliar que os transforma em um arquivo `.wav` de verdade — explicado a seguir, na seção 7.4.
+- **`return wrapPcmAsWav(pcmAudio, 24000, 1, 16);`** — finalmente, os bytes de áudio extraídos (ainda em formato bruto, chamado PCM) são passados para um método auxiliar que os transforma em um arquivo `.wav` de verdade — explicado a seguir.
 
-### 7.4. O problema do PCM cru e a montagem manual do cabeçalho WAV, explicado do zero
+### O problema do PCM cru e a montagem manual do cabeçalho WAV, explicado do zero
 
 O áudio devolvido pela API do Gemini não é um arquivo `.wav` ou `.mp3` já pronto e reproduzível — é **PCM cru**.
 
 > **O que é PCM, explicado do zero?** PCM (*Pulse Code Modulation*, "modulação por código de pulso") é a representação digital **mais básica e direta** possível de uma onda sonora: uma sequência de números, cada um representando a **amplitude** (a "força" da onda sonora) medida em um instante específico do tempo, a intervalos regulares (a **taxa de amostragem**, explicada a seguir). É a forma "crua" de áudio digital, sem nenhuma compressão, sem nenhum metadado sobre como interpretar esses números — apenas a sequência de amostras em si. Formatos como `.wav` são, essencialmente, dados PCM **precedidos por um cabeçalho** que descreve como interpretá-los (quantos canais, qual taxa de amostragem, etc.); formatos como `.mp3` aplicam, além disso, algoritmos de compressão que reduzem o tamanho do arquivo às custas de alguma perda de qualidade.
-
-Para que este áudio PCM possa ser salvo em um arquivo `.wav` reproduzível por qualquer player de áudio comum, é preciso **construir manualmente**, byte a byte, o cabeçalho que o formato WAV exige:
-
-```java
-private static byte[] wrapPcmAsWav(byte[] pcmData, int sampleRate, int channels, int bitsPerSample)
-        throws IOException {
-    int byteRate = sampleRate * channels * bitsPerSample / 8;
-    int blockAlign = channels * bitsPerSample / 8;
-    int dataSize = pcmData.length;
-
-    ByteBuffer header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
-    header.put("RIFF".getBytes());
-    header.putInt(36 + dataSize);
-    header.put("WAVE".getBytes());
-    header.put("fmt ".getBytes());
-    header.putInt(16);
-    header.putShort((short) 1);
-    header.putShort((short) channels);
-    header.putInt(sampleRate);
-    header.putInt(byteRate);
-    header.putShort((short) blockAlign);
-    header.putShort((short) bitsPerSample);
-    header.put("data".getBytes());
-    header.putInt(dataSize);
-
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    out.write(header.array());
-    out.write(pcmData);
-    return out.toByteArray();
-}
-```
 
 > **O formato WAV, explicado do zero.** WAV é, na essência, um cabeçalho fixo de **44 bytes**, seguido diretamente pelos dados de áudio PCM brutos. Esse cabeçalho segue a especificação **RIFF** (*Resource Interchange File Format*, "formato de intercâmbio de recursos") — um formato genérico de "contêiner" (uma estrutura que organiza diferentes blocos de dados dentro de um único arquivo) usado por vários tipos de arquivo multimídia, do qual o WAV é um dos exemplos mais conhecidos.
 
@@ -1654,7 +1749,11 @@ private static byte[] wrapPcmAsWav(byte[] pcmData, int sampleRate, int channels,
 
 Este cálculo específico (**`24000`** Hz de taxa de amostragem, **`1`** canal — mono, **`16`** bits por amostra) não é algo que a aplicação descobre dinamicamente a partir da resposta da API — são valores **fixos e documentados** pela própria API de TTS do Gemini, para este modelo específico (`gemini-2.5-flash-preview-tts`).
 
-### 7.5. `TextToSpeechController`: expondo a síntese via HTTP
+### 7.6. Passo 3 — Criar `TextToSpeechController`
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/TextToSpeechController.java`
+
+**O que fazer:** crie este arquivo, dentro de `src/main/java/dio/budgeting/`, com este conteúdo:
 
 ```java
 package dio.budgeting;
@@ -1700,31 +1799,43 @@ public class TextToSpeechController {
 }
 ```
 
-- **`private final TextToSpeechService textToSpeechService;`** e injeção via construtor — o mesmo padrão de sempre (Parte 3.6), agora injetando o `@Service` construído na seção 7.3. Repare que toda a complexidade de configuração do Gemini, extração de áudio e montagem do WAV **não está aqui, no controller** — ela foi propositalmente **extraída** para o `TextToSpeechService`. Essa separação de responsabilidades tem um motivo concreto que só fica claro na Parte 11: **duas rotas diferentes** da aplicação (`/api/synthesize`, aqui, e `/api/ai`, o fluxo completo de voz para voz) precisam sintetizar áudio — se essa lógica estivesse duplicada em dois controllers, qualquer ajuste futuro (trocar a voz, mudar o modelo) precisaria ser replicado em dois lugares, um convite a inconsistências.
-- **`@PostMapping(value = "/synthesize", produces = "audio/wav")`** — o atributo **`produces`** (diferente de `consumes`, visto na Parte 6.4) declara o tipo de conteúdo (`Content-Type`) que **este endpoint devolve** na resposta — aqui, `"audio/wav"`, coerente com o formato produzido por `wrapPcmAsWav(...)` no serviço.
+**✅ Este é o arquivo completo.**
+
+- **`private final TextToSpeechService textToSpeechService;`** e injeção via construtor — o mesmo padrão de sempre (Parte 3.6), agora injetando o `@Service` construído no Passo 2. Repare que toda a complexidade de configuração do Gemini, extração de áudio e montagem do WAV **não está aqui, no controller** — ela foi propositalmente **extraída** para o `TextToSpeechService`. Essa separação de responsabilidades tem um motivo concreto que só fica claro na Parte 11: **duas rotas diferentes** da aplicação (`/api/synthesize`, aqui, e `/api/ai`, o fluxo completo de voz para voz) precisam sintetizar áudio — se essa lógica estivesse duplicada em dois controllers, qualquer ajuste futuro (trocar a voz, mudar o modelo) precisaria ser replicado em dois lugares, um convite a inconsistências.
+- **`@PostMapping(value = "/synthesize", produces = "audio/wav")`** — o atributo **`produces`** (diferente de `consumes`, visto na Parte 6.6) declara o tipo de conteúdo (`Content-Type`) que **este endpoint devolve** na resposta — aqui, `"audio/wav"`, coerente com o formato produzido por `wrapPcmAsWav(...)` no serviço.
 - **`@RequestBody SynthesizeRequest request`** — assim como em outros endpoints `POST` que veremos (Parte 10), este parâmetro é desserializado a partir do corpo JSON da requisição.
-- **`record SynthesizeRequest(String text) { }`** — um **record** (conceito que será formalmente explicado, com todos os detalhes, na Parte 8.3 — adiantando: uma forma compacta do Java para declarar uma classe imutável de dados) usado como o formato esperado do corpo da requisição: um JSON simples com um único campo, `{"text": "..."}`.
+- **`record SynthesizeRequest(String text) { }`** — um **record** (conceito formalmente explicado, com todos os detalhes, na Parte 8.2 — adiantando: uma forma compacta do Java para declarar uma classe imutável de dados) usado como o formato esperado do corpo da requisição: um JSON simples com um único campo, `{"text": "..."}`.
 - **`ByteArrayResource resource = new ByteArrayResource(wavAudio);`** — uma implementação concreta de `Resource` (mesma abstração da Parte 6.1) construída diretamente a partir de um array de bytes já em memória, sem depender de nenhum arquivo físico salvo em disco.
 - **`ContentDisposition.attachment().filename("audio.wav").build()`** — monta o valor do cabeçalho HTTP `Content-Disposition: attachment; filename="audio.wav"`, que instrui o cliente (navegador, ferramenta de requisição HTTP) a tratar a resposta recebida como um **arquivo para salvar/baixar**, sugerindo o nome `audio.wav`, em vez de tentar exibir o conteúdo diretamente na tela.
 - **`ResponseEntity.ok().header(...).body(resource)`** — constrói a resposta HTTP completa de forma explícita: `.ok()` define o código de status `200`; `.header(...)` adiciona o cabeçalho de `Content-Disposition` recém-montado; `.body(resource)` define o `Resource` como corpo da resposta — o Spring, ao ver o tipo de retorno `ResponseEntity<Resource>` combinado com `produces = "audio/wav"`, sabe automaticamente como escrever esse recurso como bytes brutos no corpo da resposta.
 
-### 7.6. Teste de integração: `GeminiSpeechModelIT`
+**Testando manualmente**, com a aplicação rodando — este endpoint recebe um corpo JSON (`@RequestBody`), então o `curl` precisa enviar `Content-Type: application/json` e o campo `text`:
 
-O teste correspondente repete, de forma independente, a mesma lógica de configuração e o mesmo `wrapPcmAsWav` do `TextToSpeechService` (este teste antecede a extração do serviço, dentro da linha do tempo do desenvolvimento), mas salva o resultado em um **arquivo temporário**, para conferência manual e auditiva:
-
-```java
-Path tempFile = Files.createTempFile("AUDIO_", ".wav");
-Files.write(tempFile, wavAudio);
-System.out.println(tempFile.toAbsolutePath());
+```bash
+curl -X POST "http://localhost:8080/api/synthesize" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Sua transação de oitenta reais na farmácia foi registrada com sucesso."}' \
+  --output audio.wav
 ```
 
-- **`Files.createTempFile("AUDIO_", ".wav")`** — um método utilitário do Java (`java.nio.file.Files`) que cria um arquivo temporário no diretório padrão do sistema operacional para esse fim (em Linux, tipicamente `/tmp`), com um nome único gerado automaticamente pelo sistema (combinando o prefixo `AUDIO_` e o sufixo `.wav` fornecidos com uma parte aleatória, garantindo que não colida com nenhum outro arquivo).
-- **`Files.write(tempFile, wavAudio)`** — escreve o array de bytes do áudio já montado (com o cabeçalho WAV) nesse arquivo temporário recém-criado.
-- Ao rodar este teste manualmente e **abrir o caminho impresso no console** (por exemplo, arrastando-o para um player de áudio, ou abrindo pelo gerenciador de arquivos), é possível **ouvir de fato** o áudio sintetizado, e conferir se a fala corresponde corretamente ao texto enviado — um passo de validação **manual e auditiva**, complementar às asserções automáticas do teste (como `assertThat(pcmAudio).hasSizeGreaterThan(1024)`, que apenas confirma que *algum* áudio de tamanho razoável foi recebido, sem validar seu conteúdo real).
+> **Nota sobre o `curl` acima:**
+> - **`-H "Content-Type: application/json"`** — informa ao servidor que o corpo da requisição é JSON, coerente com o que `@RequestBody` espera desserializar.
+> - **`-d '{"text": "..."}'`** — o corpo da requisição em si, no formato exato de `SynthesizeRequest` (um único campo `text`).
+> - **`--output audio.wav`** — diferente dos `curl` anteriores (que imprimiam a resposta direto no terminal, por ser texto), aqui a resposta é **binária** (um arquivo de áudio) — `--output audio.wav` salva o corpo da resposta em um arquivo local com esse nome, em vez de tentar exibi-lo como texto no terminal (o que produziria apenas caracteres ilegíveis).
+
+**Como validar este teste — passo a passo:**
+
+1. Rode o `curl` acima, a partir da pasta `budgeting/` (ou de qualquer pasta, desde que você tenha permissão de escrita ali — o arquivo `audio.wav` será criado no diretório onde o comando foi executado).
+2. Confirme que o arquivo `audio.wav` foi criado (`ls -la audio.wav`), e que seu tamanho é maior que alguns poucos bytes (um áudio de verdade não deveria ter menos de alguns milhares de bytes).
+3. **Abra `audio.wav` em qualquer player de áudio** e ouça o resultado — a mesma validação auditiva manual já feita no Passo 1, agora confirmando que o **endpoint HTTP completo** (não só a lógica interna do serviço) produz um arquivo `.wav` reproduzível.
 
 ### 7.7. Checkpoint da Parte 7
 
-Confirmado no `.zip`: `TextToSpeechService.java` existe como `@Service`, encapsulando o SDK nativo do Gemini e o processo de *wrap* PCM → WAV; `TextToSpeechController.java` existe com o endpoint `POST /api/synthesize` (produzindo `audio/wav` — diferente de `audio/mp3`, como seria no protótipo original baseado em OpenAI); `GeminiSpeechModelIT.java` valida a geração de áudio de forma independente, salvando em arquivo temporário para audição manual.
+| Arquivo | Ação nesta Parte |
+|---|---|
+| `budgeting/src/test/java/dio/budgeting/GeminiSpeechModelIT.java` | **Criado**, validado por asserção automática (`hasSizeGreaterThan(1024)`) **e** audição manual do arquivo temporário gerado |
+| `budgeting/src/main/java/dio/budgeting/TextToSpeechService.java` | **Criado** — `@Service` encapsulando o SDK nativo do Gemini e o processo de *wrap* PCM → WAV |
+| `budgeting/src/main/java/dio/budgeting/TextToSpeechController.java` | **Criado** — endpoint `POST /api/synthesize`, testado manualmente via `curl` (produzindo `audio/wav` — diferente de `audio/mp3`, como seria no protótipo original baseado em OpenAI), validado por audição manual |
 
 **Recapitulando:** com esta parte concluída, temos os **três blocos individuais** do pipeline funcionando de forma isolada e testada: transcrever áudio (Parte 6), delegar ações reais a métodos Java a partir de uma conversa (Parte 5, ainda em um exemplo didático), e sintetizar voz (esta parte). Falta ainda uma peça central antes de juntar tudo: dar ao Tool Calling algo de verdade para fazer — o **domínio de negócio** do projeto (transações financeiras), construído a partir da Parte 8.
 

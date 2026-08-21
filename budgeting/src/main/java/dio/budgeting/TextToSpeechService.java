@@ -76,4 +76,30 @@ public class TextToSpeechService {
         return wrapPcmAsWav(pcmAudio, 24000, 1, 16);
     }
 
+    private static byte[] wrapPcmAsWav(byte[] pcmData, int sampleRate, int channels, int bitsPerSample)
+            throws IOException {
+        int byteRate = sampleRate * channels * bitsPerSample / 8;
+        int blockAlign = channels * bitsPerSample / 8;
+        int dataSize = pcmData.length;
+
+        ByteBuffer header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
+        header.put("RIFF".getBytes());
+        header.putInt(36 + dataSize);
+        header.put("WAVE".getBytes());
+        header.put("fmt ".getBytes());
+        header.putInt(16);
+        header.putShort((short) 1);
+        header.putShort((short) channels);
+        header.putInt(sampleRate);
+        header.putInt(byteRate);
+        header.putShort((short) blockAlign);
+        header.putShort((short) bitsPerSample);
+        header.put("data".getBytes());
+        header.putInt(dataSize);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(header.array());
+        out.write(pcmData);
+        return out.toByteArray();
+    }
 }
