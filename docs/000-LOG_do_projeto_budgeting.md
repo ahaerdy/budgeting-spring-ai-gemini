@@ -556,5 +556,90 @@ Incorporadas ao `000-Tutorial_Budgeting_Spring_AI_COMPLETO.md`, Parte 6:
 
 ---
 
-## 📝 LOG DE EXECUÇÃO — DIA 06 
+## 📝 LOG DE EXECUÇÃO — DIA 06
 
+**Data:** 22/08/2026
+**Contexto:** Execução completa da Parte 7 do tutorial (Vídeo 07) — síntese de voz (TTS), o segundo e último ponto sem equivalente Gemini no Spring AI. Nesta mesma sessão, a Parte 7 do tutorial foi previamente reescrita no formato de receita explícita (3 passos, com o código completo de `GeminiSpeechModelIT.java` — antes ausente do documento — e instruções de teste manual via `curl` para o `TextToSpeechController`, também ausentes anteriormente).
+
+---
+
+## 12. 🔌 Parte 7 do Tutorial — Sintetizando voz (Vídeo 07) — executada e concluída
+
+Objetivo desta etapa: transformar texto em áudio usando o SDK nativo `com.google.genai.Client` (sem `TextToSpeechModel`, que não existe para Gemini), validado por teste com audição manual e exposto via HTTP.
+
+### 12.1. Arquivos criados
+
+**`budgeting/src/test/java/dio/budgeting/GeminiSpeechModelIT.java`** (novo) — teste de integração usando o SDK nativo do Gemini diretamente, gerando um arquivo `.wav` temporário para audição manual, além da asserção automática de tamanho mínimo do áudio (`hasSizeGreaterThan(1024)`).
+
+**`budgeting/src/main/java/dio/budgeting/TextToSpeechService.java`** (novo) — `@Service` encapsulando a configuração do SDK do Gemini (`Client`, `GenerateContentConfig`, voz `"Kore"`) e o processo de conversão de PCM cru para um arquivo WAV válido (`wrapPcmAsWav`).
+
+**`budgeting/src/main/java/dio/budgeting/TextToSpeechController.java`** (novo) — endpoint `POST /api/synthesize`, recebendo um corpo JSON (`{"text": "..."}`) e devolvendo um arquivo `audio/wav` como anexo para download.
+
+### 12.2. Passo 1 — `GeminiSpeechModelIT`: execução e validação
+
+**Comando executado:**
+```bash
+./gradlew test --tests "dio.budgeting.GeminiSpeechModelIT"
+```
+
+**Resultado do console:**
+```
+Starting a Gradle Daemon (subsequent builds will be faster)
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+BUILD SUCCESSFUL in 28s
+5 actionable tasks: 3 executed, 2 up-to-date
+```
+
+**Arquivo gerado:** `AUDIO_3994516759941284544.wav` (nome único gerado automaticamente por `Files.createTempFile(...)`, conforme seção 7.4 do tutorial).
+
+**Validação auditiva manual:** confirmada — a frase reproduzida foi *"Sua transação de oitenta reais na farmácia foi registrada com sucesso."*, exatamente o texto enviado ao Gemini dentro do teste.
+
+**Observação sobre a saída do console, mais enxuta que em execuções anteriores:** esta foi a primeira execução do Gradle nesta sessão/reinicialização — daí a linha `"Starting a Gradle Daemon"`. Diferente das execuções anteriores (que mostravam o banner do Spring Boot e os logs `INFO`/`DEBUG` completos no terminal), aqui o console ficou mais resumido; parte da saída detalhada do teste passa a ficar apenas no relatório HTML (`build/reports/tests/test/index.html`), sem prejuízo à validação, já que `BUILD SUCCESSFUL` já confirma que a asserção `hasSizeGreaterThan(1024)` foi satisfeita, e a audição manual complementa a confirmação de que o SDK do Gemini realmente devolveu um áudio compreensível — validação dupla, exatamente como pedido pelo tutorial (automática + auditiva).
+
+### 12.3. Passo 3 — `TextToSpeechController`: execução e validação via `curl`
+
+**Comando executado:**
+```bash
+curl -X POST "http://localhost:8080/api/synthesize" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Sua transação de oitenta reais na farmácia foi registrada com sucesso."}' \
+  --output audio.wav
+```
+
+**Saída do `curl`:**
+```
+% Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
+                                 Dload  Upload  Total   Spent   Left   Speed
+100 251.8k 100 251.8k 100     85  51082     16   00:05   00:05
+```
+
+**Arquivo gerado:** `audio.wav`, **251.8 KB**.
+
+**Validação auditiva manual:** confirmada — mesma frase reproduzida corretamente.
+
+**Confirmação cruzada via log de `BudgetingApplication`:** o log da aplicação, anexado à execução, confirma o fluxo HTTP completo sem nenhuma linha `ERROR`: Tomcat inicializado na porta `8080` às `18:16:19`; `DispatcherServlet` inicializado sob demanda, na primeira requisição recebida, às `18:17:22` (o intervalo de mais de um minuto corresponde ao tempo entre subir a aplicação e efetivamente disparar o `curl`, não a nenhuma lentidão do sistema).
+
+**Verificação de sanidade sobre o tamanho do arquivo:** `251.8 KB` é plausível e coerente com os parâmetros de áudio documentados no tutorial (`24000` Hz, mono, `16` bits): `24000 amostras/s × 2 bytes/amostra × ~5s de fala ≈ 240.000 bytes`, muito próximo do valor observado — confirmando que `wrapPcmAsWav(...)` produziu um cabeçalho e dados consistentes com a especificação.
+
+### 12.4. ✅ Checkpoint da Parte 7 — fechado
+
+| Item | Status |
+| --- | --- |
+| `GeminiSpeechModelIT` — criado, rodado (`BUILD SUCCESSFUL`), validado por asserção automática **e** audição manual | ✅ |
+| `TextToSpeechService` — criado, encapsulando SDK nativo do Gemini e conversão PCM → WAV | ✅ |
+| `TextToSpeechController` — criado, endpoint `POST /api/synthesize` testado via `curl`, arquivo `audio.wav` gerado e validado por audição manual, log da aplicação sem erros | ✅ |
+
+**Marca de confiança:** *(a preencher por Arthur, conforme critério definido em 17/08/2026 — ver nota no início deste documento)*
+
+### 12.5. 📚 Atualização aplicada ao tutorial, nesta mesma sessão
+
+Incorporada ao `000-Tutorial_Budgeting_Spring_AI_COMPLETO.md`, Parte 7, **antes** da execução registrada acima — corrigindo duas lacunas identificadas: (1) o código completo de `GeminiSpeechModelIT.java`, com todos os `import`s, estava ausente do documento (só um fragmento de 3 linhas era mostrado anteriormente); (2) não havia nenhuma instrução de como testar o `TextToSpeechController` manualmente. A Parte 7 foi reescrita integralmente no formato de receita explícita (3 passos, tabela "Visão geral", `📁 Arquivo`/`✅` em cada seção), incluindo:
+
+- O arquivo completo de `GeminiSpeechModelIT.java`, com uma nota explicando por que ele "duplica" a lógica de `wrapPcmAsWav` do serviço (o teste antecede a extração do serviço, na ordem de construção do tutorial).
+- Um passo a passo de validação para o teste, incluindo a etapa de audição manual do arquivo temporário gerado.
+- Um `curl -X POST` completo para o `TextToSpeechController`, com `-H "Content-Type: application/json"`, `-d` com o corpo JSON, e `--output audio.wav` (com nota explicando por que este `curl` precisa de `--output`, diferente dos anteriores, por se tratar de uma resposta binária).
+- Um passo a passo de validação equivalente para o controller.
+
+**Próximo passo planejado:** Parte 8 do tutorial (Vídeo 08) — o domínio de negócio do projeto (`Transaction`, `Category`, `TransactionRepository`) e o primeiro caso de uso real (`PersistTransactionUseCase`), onde o padrão de Tool Calling (já validado na Parte 5) passa a ser aplicado pela primeira vez a uma operação de negócio de verdade, não mais a um exemplo didático.
+
+---
