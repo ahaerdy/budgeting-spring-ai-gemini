@@ -1852,20 +1852,27 @@ Até aqui, o projeto sabia conversar com o Gemini, transcrever áudio e sintetiz
 
 Dar ao projeto uma representação própria do domínio de negócio (o que é uma transação, quais categorias existem), organizada em camadas bem definidas, e o primeiro **caso de uso** real, que também será a primeira *tool* de verdade (não mais um exemplo didático como `MathTools`, da Parte 5).
 
-> **📁 Arquivos desta etapa — a partir daqui, os pacotes `domain`, `application` e `infrastructure` nascem pela primeira vez.** Crie os quatro subpacotes primeiro (pastas vazias, se sua IDE exigir), e depois os arquivos, **nesta ordem** (cada um depende apenas dos anteriores, nunca dos seguintes — por isso a ordem importa):
-> 1. **Criar pacote** `src/main/java/dio/budgeting/domain/` (novo).
-> 2. **Criar** `domain/TransactionId.java` (seção 8.2) — não depende de mais nada além da biblioteca padrão do Java.
-> 3. **Criar** `domain/Category.java` (seção 8.3) — idem.
-> 4. **Criar** `domain/Transaction.java` (seção 8.4) — depende de `TransactionId` e `Category`, já criados.
-> 5. **Criar** `domain/TransactionRepository.java` (seção 8.6) — depende de `Transaction` e `Category`.
-> 6. **Criar pacote** `src/main/java/dio/budgeting/application/` e os subpacotes `application/input/` e `application/output/` (novos).
-> 7. **Criar** `application/input/PersistTransactionInput.java` (seção 8.8) — depende de `Category`.
-> 8. **Criar** `application/output/TransactionOutput.java` (seção 8.8) — depende de `Transaction`.
-> 9. **Criar** `application/PersistTransactionUseCase.java` (seção 8.7) — depende de todos os anteriores.
-> 10. **Editar** `build.gradle` — adicionar o plugin `io.freefair.lombok` (seção 8.5), necessário para `Transaction` compilar (ela usa `@Getter`/`@AllArgsConstructor`). Faça isso **antes** de escrever `Transaction.java`, ou sua IDE vai acusar erro nessas anotações por não reconhecê-las.
-> 11. **Criar pacote** `src/main/java/dio/budgeting/infrastructure/` — apenas o pacote vazio por enquanto, como marcador de que a próxima camada (persistência real) vem na Parte 9. Nenhum arquivo dentro dele ainda.
->
-> Não existe teste de integração automatizado nesta Parte (nenhum sufixo `IT` novo) — a "prova" de que o domínio está correto, por enquanto, é o projeto compilar sem erros. A verificação funcional de verdade só acontece na Parte 9, quando `TransactionRepository` finalmente tiver uma implementação real para testar.
+### Visão geral desta etapa — os 11 passos, em ordem
+
+> **A partir daqui, os pacotes `domain`, `application` e `infrastructure` nascem pela primeira vez.** A ordem abaixo importa: cada arquivo depende apenas dos anteriores, nunca dos seguintes.
+
+| Passo | Ação | Arquivo/Local |
+|---|---|---|
+| 1 | Criar o pacote `domain` | `budgeting/src/main/java/dio/budgeting/domain/` |
+| 2 | Criar `TransactionId` | `domain/TransactionId.java` |
+| 3 | Criar `Category` | `domain/Category.java` |
+| 4 | Editar `build.gradle` — adicionar o plugin do Lombok | `budgeting/build.gradle` |
+| 5 | Criar `Transaction` | `domain/Transaction.java` |
+| 6 | Criar `TransactionRepository` | `domain/TransactionRepository.java` |
+| 7 | Criar os pacotes `application`, `application/input`, `application/output` | `budgeting/src/main/java/dio/budgeting/application/` |
+| 8 | Criar `PersistTransactionInput` | `application/input/PersistTransactionInput.java` |
+| 9 | Criar `TransactionOutput` | `application/output/TransactionOutput.java` |
+| 10 | Criar `PersistTransactionUseCase` | `application/PersistTransactionUseCase.java` |
+| 11 | Criar o pacote `infrastructure` (vazio por enquanto) | `budgeting/src/main/java/dio/budgeting/infrastructure/` |
+
+> **Atenção à ordem do Passo 4:** diferente de outras Partes, aqui a edição do `build.gradle` (adicionar o plugin do Lombok) precisa acontecer **antes** de criar `Transaction.java` (Passo 5) — porque essa classe já usa as anotações `@Getter`/`@AllArgsConstructor` do Lombok. Se você criar `Transaction.java` antes de adicionar o plugin, sua IDE vai acusar erro nessas anotações por não reconhecê-las.
+
+> Não existe teste de integração automatizado nesta Parte (nenhum sufixo `IT` novo) — a "prova" de que o domínio está correto, por enquanto, é o projeto **compilar sem erros**. A verificação funcional de verdade só acontece na Parte 9, quando `TransactionRepository` finalmente tiver uma implementação real para testar. A seção 8.9, ao final, detalha como confirmar isso.
 
 ### 8.1. Domain-Driven Design e Clean Architecture, explicados do zero
 
@@ -1880,11 +1887,15 @@ A partir desta parte, o projeto passa a organizar o código Java em três pacote
 Essa separação em três pacotes é a aplicação prática de dois conceitos de arquitetura de software bastante conhecidos, que vale a pena conhecer pelo nome:
 
 - **Domain-Driven Design (DDD)**, ou "Design Orientado a Domínio" — uma abordagem de projeto de software em que o código é organizado **em torno do domínio do negócio** (aqui, "transações financeiras e suas categorias"), mantendo essas regras isoladas de detalhes técnicos de infraestrutura (banco de dados, frameworks web, etc.), para que mudanças em um lado não obriguem mudanças no outro.
-- **Clean Architecture** ("Arquitetura Limpa") — um estilo de arquitetura, popularizado pelo autor Robert C. Martin, organizado em **camadas concêntricas**, em que camadas mais internas (o domínio) **nunca dependem** de camadas mais externas (a infraestrutura) — é sempre o contrário: o domínio define **apenas o quê** precisa ser feito (através de uma interface, como veremos na seção 8.7), e é a infraestrutura quem fornece **o como** (a implementação concreta, na Parte 9). É exatamente essa "inversão" que torna possível, em teoria, trocar completamente o banco de dados usado sem alterar **nenhuma** linha de regra de negócio.
+- **Clean Architecture** ("Arquitetura Limpa") — um estilo de arquitetura, popularizado pelo autor Robert C. Martin, organizado em **camadas concêntricas**, em que camadas mais internas (o domínio) **nunca dependem** de camadas mais externas (a infraestrutura) — é sempre o contrário: o domínio define **apenas o quê** precisa ser feito (através de uma interface, como veremos na seção 8.6), e é a infraestrutura quem fornece **o como** (a implementação concreta, na Parte 9). É exatamente essa "inversão" que torna possível, em teoria, trocar completamente o banco de dados usado sem alterar **nenhuma** linha de regra de negócio.
 
-  > **Por que essa inversão importa na prática, e não é só "elegância acadêmica"?** Porque ela reduz o **acoplamento** — a dependência de uma parte do sistema em relação aos detalhes internos de outra parte. Se `PersistTransactionUseCase` (que veremos na seção 8.8) dependesse diretamente de uma classe JPA/Hibernate específica, qualquer mudança na forma de persistência (trocar de MySQL para outro banco, por exemplo, ou até para um armazenamento totalmente diferente) exigiria alterar o caso de uso também. Como ele depende apenas de uma **interface** de domínio (`TransactionRepository`, seção 8.7), essa troca fica isolada inteiramente dentro da camada `infrastructure`.
+  > **Por que essa inversão importa na prática, e não é só "elegância acadêmica"?** Porque ela reduz o **acoplamento** — a dependência de uma parte do sistema em relação aos detalhes internos de outra parte. Se `PersistTransactionUseCase` (que veremos na seção 8.10) dependesse diretamente de uma classe JPA/Hibernate específica, qualquer mudança na forma de persistência (trocar de MySQL para outro banco, por exemplo, ou até para um armazenamento totalmente diferente) exigiria alterar o caso de uso também. Como ele depende apenas de uma **interface** de domínio (`TransactionRepository`, seção 8.6), essa troca fica isolada inteiramente dentro da camada `infrastructure`.
 
-### 8.2. `TransactionId`: um identificador fortemente tipado, explicado do zero
+### 8.2. Passo 2 — Criar `TransactionId`
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/domain/TransactionId.java`
+
+**O que fazer:** crie este arquivo, dentro do pacote `domain` (recém-criado no Passo 1), com este conteúdo completo:
 
 ```java
 package dio.budgeting.domain;
@@ -1897,6 +1908,8 @@ public record TransactionId(UUID uuid) {
     }
 }
 ```
+
+**✅ Este é o arquivo completo.**
 
 - **`record TransactionId(UUID uuid)`** — a primeira aparição, neste tutorial, da palavra-chave **`record`**, que já foi mencionada de leve na Parte 7.5, mas merece agora sua explicação completa.
 
@@ -1912,7 +1925,11 @@ public record TransactionId(UUID uuid) {
 - **`public TransactionId() { this(UUID.randomUUID()); }`** — um **segundo construtor**, escrito manualmente, sem nenhum parâmetro. Isso é necessário porque o construtor **gerado automaticamente** pelo `record` (o que recebe um `UUID` já pronto) é obrigatório informar um valor — não haveria, por padrão, uma forma de criar um `TransactionId` **novo**, com um identificador recém-gerado, sem esse construtor extra.
   - **`this(UUID.randomUUID())`** — a sintaxe `this(...)`, quando é a **primeira instrução** dentro de um construtor, chama **outro construtor da mesma classe** (aqui, o construtor gerado automaticamente pelo `record`, que recebe um `UUID`), repassando o valor calculado — neste caso, `UUID.randomUUID()`, um método estático da própria classe `UUID` que gera um novo identificador aleatório, a cada chamada.
 
-### 8.3. `Category`: um `enum` para valores fixos e conhecidos, explicado do zero
+### 8.3. Passo 3 — Criar `Category`
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/domain/Category.java`
+
+**O que fazer:** crie este arquivo, no mesmo pacote `domain`, com este conteúdo:
 
 ```java
 package dio.budgeting.domain;
@@ -1924,11 +1941,46 @@ public enum Category {
 }
 ```
 
+**✅ Este é o arquivo completo.**
+
 > **O que é um `enum`, explicado do zero?** `enum` (abreviação de *enumeration*, "enumeração") é um tipo especial do Java para representar um conjunto **fixo, pequeno e conhecido de antemão** de valores possíveis. A diferença crucial em relação a uma `String` livre: se `Category` fosse simplesmente uma `String`, qualquer texto seria tecnicamente aceito onde uma categoria é esperada — incluindo erros de digitação (`"Groceriess"`, por exemplo) ou valores completamente sem sentido para o domínio (`"BananaDePijamas"`). Com um `enum`, o **próprio compilador Java** garante, já durante a compilação (antes mesmo de rodar o programa), que apenas um dos valores explicitamente declarados (`GROCERIES`, `PHARMA`, `AUTO`) pode ser usado em qualquer lugar do código que espere um valor do tipo `Category` — eliminando uma categoria inteira de erros possíveis, de forma automática.
 
 `GROCERIES`, `PHARMA`, `AUTO` são as três categorias suportadas nesta versão do projeto — respectivamente, mercado/compras do dia a dia, farmácia, e gastos relacionados a veículo/automóvel. Essa lista fixa é o primeiro candidato natural de expansão futura do projeto (assunto retomado na seção de Próximos Passos, ao final deste tutorial).
 
-### 8.4. `Transaction`: a entidade de domínio, explicada do zero
+### 8.4. Passo 4 — Editar `build.gradle`: adicionando o plugin do Lombok
+
+**📁 Arquivo:** `budgeting/build.gradle` (editar)
+
+**O que fazer:** dentro do bloco `plugins { }` já existente (com `id 'java'`, `id 'org.springframework.boot'`, etc., desde a Parte 1.5), **adicione** esta linha:
+
+```groovy
+id 'io.freefair.lombok' version '9.2.0'
+```
+
+**✅ Depois desta edição, o bloco `plugins { }` fica assim, completo:**
+
+```groovy
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.1.0'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'io.freefair.lombok' version '9.2.0'
+}
+```
+
+**Lombok** é uma biblioteca Java que **gera código repetitivo automaticamente**, em tempo de compilação, a partir de anotações simples aplicadas às classes — evitando que o programador precise escrever (e, pior ainda, **manter atualizado**) esse tipo de código manualmente toda vez que um campo é adicionado ou removido.
+
+> **Por que "código repetitivo" é um problema, mesmo sendo simples de escrever?** Escrever um método `getDescription()` que só devolve `this.description` é trivial — mas em uma classe com vários campos, isso significa vários métodos quase idênticos, só mudando o nome do campo. Além do tempo gasto digitando, existe o risco de **inconsistência**: se um campo novo é adicionado à classe, é fácil esquecer de adicionar o *getter* correspondente, e esse tipo de esquecimento só costuma aparecer como um bug mais tarde, quando algum código tenta chamar um método que "deveria existir" mas não existe.
+
+- **`io.freefair.lombok`** — um plugin Gradle de terceiros (mantido pela comunidade, não pela própria equipe do Lombok, mas amplamente usado e confiável) que integra o Lombok ao processo de compilação do Gradle automaticamente, sem exigir configuração manual adicional do chamado *annotation processor* (o mecanismo interno do compilador Java que permite a bibliotecas como o Lombok "interceptar" a compilação e gerar código extra).
+
+Depois de adicionar esta linha, lembre-se de sincronizar o Gradle (dica prática da Parte 1.5) antes de seguir para o próximo passo.
+
+### 8.5. Passo 5 — Criar `Transaction`
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/domain/Transaction.java`
+
+**O que fazer:** crie este arquivo, no pacote `domain`, com este conteúdo:
 
 ```java
 package dio.budgeting.domain;
@@ -1953,39 +2005,26 @@ public class Transaction {
 }
 ```
 
-- **`private TransactionId id;`**, **`private String description;`**, **`private double amount;`**, **`private Category category;`** — quatro campos privados, representando o estado completo de uma transação. Repare que `Transaction`, diferente de `TransactionId` e `Category`, **não é um `record`** — é uma classe Java tradicional. Isso será explicado a seguir, junto do Lombok.
+**✅ Este é o arquivo completo.**
 
-  > **Por que `private`, explicado do zero?** O modificador de acesso `private` restringe a visibilidade de um campo (ou método) **exclusivamente** ao código dentro da própria classe onde ele foi declarado — nenhuma outra classe, nem mesmo uma que "herde" desta, consegue acessar esse campo diretamente pelo nome (`transaction.description`, por exemplo, não compilaria de fora da classe). Esta é a base do princípio de **encapsulamento** da orientação a objetos: os dados internos de um objeto ficam protegidos contra alteração ou leitura descontrolada vinda de fora, sendo acessados apenas através de métodos explicitamente disponibilizados para isso (os chamados *getters*, explicados na próxima seção).
+- **`private TransactionId id;`**, **`private String description;`**, **`private double amount;`**, **`private Category category;`** — quatro campos privados, representando o estado completo de uma transação. Repare que `Transaction`, diferente de `TransactionId` e `Category`, **não é um `record`** — é uma classe Java tradicional. As duas anotações do Lombok (`@Getter`, `@AllArgsConstructor`) são explicadas logo abaixo.
+
+  > **Por que `private`, explicado do zero?** O modificador de acesso `private` restringe a visibilidade de um campo (ou método) **exclusivamente** ao código dentro da própria classe onde ele foi declarado — nenhuma outra classe, nem mesmo uma que "herde" desta, consegue acessar esse campo diretamente pelo nome (`transaction.description`, por exemplo, não compilaria de fora da classe). Esta é a base do princípio de **encapsulamento** da orientação a objetos: os dados internos de um objeto ficam protegidos contra alteração ou leitura descontrolada vinda de fora, sendo acessados apenas através de métodos explicitamente disponibilizados para isso (os chamados *getters*, gerados aqui pelo Lombok).
 - **`private double amount;`** — vale destacar uma decisão de projeto importante aqui: diferente de armazenar um valor monetário como um número inteiro em **centavos** (`long`), o domínio armazena diretamente o valor em **reais**, como número decimal.
 
-  > **Por que isso é uma decisão que vale a pena notar?** Em software financeiro "de livro-texto", é mais comum guardar valores monetários como um inteiro representando centavos, justamente para evitar os pequenos erros de arredondamento característicos de números de ponto flutuante (`double`) em cálculos repetidos — por exemplo, somar `0.1 + 0.2` em `double` não resulta exatamente em `0.3`, por limitações de como esse tipo representa números decimais internamente. O projeto opta, de forma consciente, por manter o domínio já em `double`/reais — e concentra toda a **conversão** de centavos-para-reais na **borda** do sistema, especificamente dentro de `PersistTransactionUseCase` (seção 8.9), mantendo a entidade de domínio sempre já no formato "pronto para exibir e usar internamente".
+  > **Por que isso é uma decisão que vale a pena notar?** Em software financeiro "de livro-texto", é mais comum guardar valores monetários como um inteiro representando centavos, justamente para evitar os pequenos erros de arredondamento característicos de números de ponto flutuante (`double`) em cálculos repetidos — por exemplo, somar `0.1 + 0.2` em `double` não resulta exatamente em `0.3`, por limitações de como esse tipo representa números decimais internamente. O projeto opta, de forma consciente, por manter o domínio já em `double`/reais — e concentra toda a **conversão** de centavos-para-reais na **borda** do sistema, especificamente dentro de `PersistTransactionUseCase` (seção 8.10), mantendo a entidade de domínio sempre já no formato "pronto para exibir e usar internamente".
+- **`@Getter`** — gera automaticamente, para **cada campo privado** da classe, um método público de acesso no formato `getNomeDoCampo()` — aqui, `getId()`, `getDescription()`, `getAmount()`, `getCategory()` — sem que o programador precise escrever nenhum deles manualmente. Repare que **não** existe `@Setter` aplicado a esta classe: isso é intencional, e reforça que a única forma de alterar o estado de uma `Transaction` já criada é... não existir tal forma — ela é, na prática, tratada como um objeto que, uma vez montado, não é mais modificado diretamente (embora tecnicamente os campos não sejam declarados `final`, a ausência de *setters* já impede a maior parte das alterações acidentais).
+- **`@AllArgsConstructor`** — gera automaticamente um construtor que recebe **todos** os campos da classe como parâmetros, exatamente na ordem em que foram declarados no código — no caso de `Transaction`, um construtor equivalente a `Transaction(TransactionId id, String description, double amount, Category category)`.
 - **Dois construtores, e por que ambos existem.** Repare que a classe tem **dois** construtores diferentes:
-  - O primeiro, **gerado automaticamente pelo Lombok** (explicado na próxima seção, via `@AllArgsConstructor`), aceita **todos** os quatro campos, incluindo o `id` já pronto — usado quando uma transação **já existente** (por exemplo, vinda de volta do banco de dados, como veremos na Parte 9) precisa ser reconstruída em memória, com o identificador que ela já tinha.
+  - O primeiro, **gerado automaticamente pelo Lombok** (via `@AllArgsConstructor`), aceita **todos** os quatro campos, incluindo o `id` já pronto — usado quando uma transação **já existente** (por exemplo, vinda de volta do banco de dados, como veremos na Parte 9) precisa ser reconstruída em memória, com o identificador que ela já tinha.
   - O segundo, **escrito manualmente** (`public Transaction(String description, double amount, Category category) { ... }`), aceita apenas os três dados que fazem sentido vir "de fora" ao **criar uma transação nova** — e **gera o `id` internamente** (`this.id = new TransactionId();`, usando o construtor sem argumentos visto na seção 8.2). Isso reflete uma regra de negócio importante: não faz sentido pedir para quem está criando uma transação nova também "inventar" um identificador único para ela — essa responsabilidade pertence à própria classe.
   - Ter dois construtores com **assinaturas diferentes** (quantidade e/ou tipos de parâmetros diferentes) na mesma classe é permitido em Java, e chama-se **sobrecarga de construtores** (*constructor overloading*) — o compilador decide automaticamente qual dos dois usar, com base em quantos e quais argumentos são passados em cada chamada específica (`new Transaction(id, desc, valor, cat)` usa o primeiro; `new Transaction(desc, valor, cat)` usa o segundo).
 
-### 8.5. Lombok: eliminando código repetitivo, explicado do zero
+### 8.6. Passo 6 — Criar `TransactionRepository`
 
-**Lombok** é uma biblioteca Java que **gera código repetitivo automaticamente**, em tempo de compilação, a partir de anotações simples aplicadas às classes — evitando que o programador precise escrever (e, pior ainda, **manter atualizado**) esse tipo de código manualmente toda vez que um campo é adicionado ou removido.
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/domain/TransactionRepository.java`
 
-> **Por que "código repetitivo" é um problema, mesmo sendo simples de escrever?** Escrever um método `getDescription()` que só devolve `this.description` é trivial — mas em uma classe com vários campos, isso significa vários métodos quase idênticos, só mudando o nome do campo. Além do tempo gasto digitando, existe o risco de **inconsistência**: se um campo novo é adicionado à classe, é fácil esquecer de adicionar o *getter* correspondente, e esse tipo de esquecimento só costuma aparecer como um bug mais tarde, quando algum código tenta chamar um método que "deveria existir" mas não existe.
-
-O Lombok é adicionado ao projeto através de um **plugin** no `build.gradle`:
-
-```groovy
-plugins {
-    id 'io.freefair.lombok' version '9.2.0'
-}
-```
-
-- **`io.freefair.lombok`** — um plugin Gradle de terceiros (mantido pela comunidade, não pela própria equipe do Lombok, mas amplamente usado e confiável) que integra o Lombok ao processo de compilação do Gradle automaticamente, sem exigir configuração manual adicional do chamado *annotation processor* (o mecanismo interno do compilador Java que permite a bibliotecas como o Lombok "interceptar" a compilação e gerar código extra).
-
-As duas anotações do Lombok usadas em `Transaction`:
-
-- **`@Getter`** — gera automaticamente, para **cada campo privado** da classe, um método público de acesso no formato `getNomeDoCampo()` — aqui, `getId()`, `getDescription()`, `getAmount()`, `getCategory()` — sem que o programador precise escrever nenhum deles manualmente. Repare que **não** existe `@Setter` aplicado a esta classe: isso é intencional, e reforça que a única forma de alterar o estado de uma `Transaction` já criada é... não existir tal forma — ela é, na prática, tratada como um objeto que, uma vez montado, não é mais modificado diretamente (embora tecnicamente os campos não sejam declarados `final`, a ausência de *setters* já impede a maior parte das alterações acidentais).
-- **`@AllArgsConstructor`** — gera automaticamente um construtor que recebe **todos** os campos da classe como parâmetros, exatamente na ordem em que foram declarados no código — no caso de `Transaction`, um construtor equivalente a `Transaction(TransactionId id, String description, double amount, Category category)`. É exatamente este o construtor mencionado na seção anterior, que complementa o construtor de três argumentos escrito manualmente.
-
-### 8.6. `TransactionRepository`: o contrato de persistência, vivendo no domínio
+**O que fazer:** crie este arquivo, no pacote `domain`, com este conteúdo:
 
 ```java
 package dio.budgeting.domain;
@@ -1998,12 +2037,74 @@ public interface TransactionRepository {
 }
 ```
 
+**✅ Este é o arquivo completo.**
+
 Esta interface vive dentro do pacote `domain` — o pacote mais **interno** da arquitetura em camadas (seção 8.1) — e, propositalmente, **não sabe absolutamente nada** sobre bancos de dados, SQL, JPA, ou qualquer outro detalhe técnico de persistência. Ela apenas declara **o que** a aplicação precisa poder fazer com uma transação: salvá-la (`save`) e buscá-la por categoria (`findAllByCategory`). É exatamente o "contrato" mencionado na explicação de Clean Architecture (seção 8.1): quem quer que implemente esta interface (a camada de `infrastructure`, na Parte 9) é livre para decidir **como**, na prática, essas duas operações são realizadas — MySQL, outro banco, ou até um armazenamento em arquivo — sem que o domínio precise mudar uma única linha.
 
 - **`Transaction save(Transaction transaction);`** — recebe uma transação (nova ou existente) e devolve a transação persistida — note que devolver a transação (em vez de `void`, "não devolve nada") é útil, por exemplo, para o chamador ter acesso ao identificador gerado, caso ainda não o tivesse.
 - **`List<Transaction> findAllByCategory(Category category);`** — recebe uma categoria e devolve todas as transações associadas a ela, como uma `List<Transaction>` (uma lista, potencialmente vazia se não houver nenhuma transação naquela categoria).
 
-### 8.7. `PersistTransactionUseCase`: o primeiro caso de uso real, e a primeira *tool* de verdade
+### 8.7. Passos 7 a 9 — Criar os DTOs de entrada e saída
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/application/input/PersistTransactionInput.java`
+
+**O que fazer:** crie primeiro os pacotes `application`, `application/input` e `application/output` (Passo 7), depois este arquivo dentro de `application/input/`:
+
+```java
+package dio.budgeting.application.input;
+
+import dio.budgeting.domain.Category;
+import org.springframework.ai.tool.annotation.ToolParam;
+
+public record PersistTransactionInput(@ToolParam(description = "Descrição do gasto") String description,
+                                      @ToolParam(description = "Valor do gasto (em centavos)") long amount,
+                                      Category category) {
+}
+```
+
+**✅ Este é o arquivo completo.**
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/application/output/TransactionOutput.java`
+
+**O que fazer:** crie este segundo arquivo, dentro de `application/output/`:
+
+```java
+package dio.budgeting.application.output;
+import dio.budgeting.domain.Transaction;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+public record TransactionOutput(String id, String description, String category, double value) {
+    public static TransactionOutput from(Transaction transaction) {
+        return new TransactionOutput(
+                transaction.getId().uuid().toString(),
+                transaction.getDescription(),
+                transaction.getCategory().name(),
+                BigDecimal.valueOf(transaction.getAmount()).setScale(2, RoundingMode.HALF_UP).doubleValue()
+        );
+    }
+}
+```
+
+**✅ Este é o arquivo completo.**
+
+> **O que é um DTO (*Data Transfer Object*), explicado do zero, e por que não usar `Transaction` diretamente em todo lugar?** Um DTO é um objeto cuja **única** responsabilidade é **carregar dados** entre diferentes camadas ou processos de um sistema — sem nenhuma lógica de negócio própria (comparado com `Transaction`, que representa um conceito de domínio "de verdade"). `PersistTransactionInput` (o que o caso de uso *recebe*) e `TransactionOutput` (o que ele *devolve*) são exatamente isso: eles isolam o caso de uso do **formato exato** usado pelas camadas que o cercam — a IA, ao extrair dados da fala do usuário (Parte 11), ou a camada HTTP tradicional (Parte 10), que reaproveita esses mesmos DTOs. Se o formato de um request HTTP mudasse no futuro, por exemplo, isso não precisaria, necessariamente, alterar a estrutura interna de `Transaction`.
+
+- **`@ToolParam(description = "...")`** — o equivalente, aplicado a um **parâmetro individual** de uma *tool*, da `description` já vista em `@Tool` (Parte 5.2, ao nível do método inteiro). Dá ao modelo um contexto específico sobre o **significado** de cada campo — especialmente útil quando os parâmetros formam um objeto mais complexo (como este `record`, com três campos), em vez de um único parâmetro primitivo simples (como era o caso de `sum(int a, int b)`, na Parte 5.2). Aqui, é explicitado que `amount` é esperado **em centavos** — uma informação essencial para que o modelo formate corretamente o valor extraído de uma frase falada (por exemplo, "R$ 80" precisa se tornar `8000`, e não `80`).
+- **Uma observação honesta sobre uma inconsistência real do código, conferida diretamente no `.zip`:** repare que apenas `description` e `amount` têm `@ToolParam`; **`category` não tem**. Isso não impede o funcionamento — o Spring AI ainda expõe `category` ao modelo (usando o nome do campo, e o fato de ser um `enum`, cujos valores possíveis já ficam implícitos na descoberta automática via reflexão, explicada na Parte 5.2), mas uma descrição explícita como *"a categoria do gasto, escolhida entre as opções disponíveis"* tornaria a instrução ainda mais clara para o modelo. Este é um pequeno e legítimo candidato de melhoria, listado na seção de Próximos Passos ao final deste tutorial.
+- **`BigDecimal` e `RoundingMode`, explicados do zero.** Ao converter o `double` interno de `Transaction` de volta para um valor "apresentável" em `TransactionOutput`, o código usa `BigDecimal` apenas para o passo de **arredondamento**:
+  - **`BigDecimal`** — uma classe do Java (pacote `java.math`) para representar números decimais com **precisão arbitrária**, sem os erros de arredondamento inerentes ao tipo `double` (mencionados na seção 8.5) — usada aqui **apenas** como uma ferramenta pontual de arredondamento controlado, e não como o tipo de armazenamento do domínio em si.
+  - **`BigDecimal.valueOf(transaction.getAmount())`** — converte o `double` já existente para um `BigDecimal` temporário.
+  - **`.setScale(2, RoundingMode.HALF_UP)`** — ajusta o número para exatamente **duas casas decimais**, usando a regra de arredondamento `HALF_UP` — "para cima a partir do dígito 5" (por exemplo, `125.335` arredondaria para `125.34`), a convenção de arredondamento mais familiar e usada no dia a dia.
+  - **`.doubleValue()`** — converte o `BigDecimal` já arredondado de volta para `double`, o tipo esperado pelo campo `value` de `TransactionOutput`.
+  - **Por que esse passo extra é necessário?** Porque um valor como `125.335000001` (um artefato comum de imprecisão de ponto flutuante, que pode surgir de operações anteriores em `double`) precisa ser "limpo" antes de ser exibido ao usuário final, evitando que apareçam casas decimais estranhas e sem sentido em uma resposta.
+
+### 8.8. Passo 10 — Criar `PersistTransactionUseCase`
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/application/PersistTransactionUseCase.java`
+
+**O que fazer:** crie este arquivo, diretamente dentro de `application/` (não em `input/` nem `output/`), com este conteúdo:
 
 ```java
 package dio.budgeting.application;
@@ -2035,60 +2136,60 @@ public class PersistTransactionUseCase {
 }
 ```
 
-- **`@Service` + injeção via construtor de `TransactionRepository`** — o mesmo padrão familiar desde a Parte 3.6. O ponto crucial a notar aqui: `PersistTransactionUseCase` depende apenas da **interface** de domínio `TransactionRepository`, e **não** de nenhuma implementação concreta específica. Isso significa que, mesmo **antes** de a Parte 9 implementar a persistência real em banco de dados, este código já está completo e correto — basta que **alguma** implementação de `TransactionRepository` esteja disponível no contexto do Spring para que tudo funcione, seja ela qual for.
+**✅ Este é o arquivo completo.**
+
+- **`@Service` + injeção via construtor de `TransactionRepository`** — o mesmo padrão familiar desde a Parte 3.6. O ponto crucial a notar aqui: `PersistTransactionUseCase` depende apenas da **interface** de domínio `TransactionRepository`, e **não** de nenhuma implementação concreta específica. Isso significa que, mesmo **antes** de a Parte 9 implementar a persistência real em banco de dados, este código já está completo e correto — basta que **alguma** implementação de `TransactionRepository` esteja disponível no contexto do Spring para que tudo funcione, seja ela qual for. **É exatamente por isso que este código compila, mas ainda não pode ser executado de ponta a ponta nesta Parte** (seção 8.9 explica com mais detalhe).
 - **`@Tool(name = "persistTransaction", description = "Persiste uma nova transação financeira")`** — este é o momento em que o padrão de Tool Calling, estudado em detalhe e com um exemplo didático na Parte 5, é finalmente aplicado a um caso de uso **real** do negócio — o próprio método `execute` de um caso de uso vira, diretamente, uma ferramenta que o LLM pode decidir chamar. Repare no atributo **`name`**, explicitamente definido aqui (diferente do exemplo `MathTools` da Parte 5.2, que não precisou dele) — o motivo específico é explicado com detalhe na Parte 11.2 (adiantando: evita uma colisão de nomes entre duas *tools* diferentes que, coincidentemente, têm métodos Java chamados da mesma forma).
-- **`var amountInReais = input.amount() / 100.0;`** — a conversão de **centavos** (a unidade em que o valor chega até este método, tanto vindo da API REST tradicional quanto vindo da extração feita pela própria IA a partir da fala do usuário) para **reais** (a unidade em que o domínio armazena o valor, como decidido na seção 8.4).
+- **`var amountInReais = input.amount() / 100.0;`** — a conversão de **centavos** (a unidade em que o valor chega até este método, tanto vindo da API REST tradicional quanto vindo da extração feita pela própria IA a partir da fala do usuário) para **reais** (a unidade em que o domínio armazena o valor, como decidido na seção 8.5).
 
   > **Por que dividir por `100.0`, e não por `100`?** Em Java, dividir dois valores do tipo `long` (ou `int`) entre si, usando o operador `/`, realiza uma **divisão inteira** — o resultado é sempre truncado, descartando qualquer parte decimal (`7 / 2` resulta em `3`, não `3.5`). Ao dividir por `100.0` (um literal do tipo `double`, por causa do ponto decimal escrito), a expressão inteira é automaticamente promovida para uma divisão de ponto flutuante, preservando os centavos como casas decimais corretas no resultado (`8000 / 100.0` resulta em `80.0`, corretamente, em vez de `80` sem parte decimal — que, tecnicamente, até funcionaria aqui, mas o princípio geral é importante para outros casos onde o resultado não seria um número redondo).
 - **`var`** — usado ao longo de todo o código do projeto (você já viu isso em vários testes anteriores) — é a palavra-chave do Java (desde a versão 10) para **inferência de tipo local**: em vez de escrever explicitamente o tipo de uma variável local (`double amountInReais = ...`), `var` permite que o **compilador** deduza o tipo automaticamente, a partir do valor atribuído. Isso não torna Java uma linguagem "dinamicamente tipada" (o tipo continua fixo e verificado em tempo de compilação, exatamente como seria com o tipo explícito) — é apenas uma conveniência de escrita, reduzindo repetição visual quando o tipo já é óbvio a partir do lado direito da atribuição.
-- **`new Transaction(input.description(), amountInReais, input.category())`** — usa o construtor de **três argumentos** de `Transaction` (seção 8.4), o que automaticamente gera um novo `TransactionId` internamente — reforçando, mais uma vez, que criar uma transação nova nunca exige que o chamador escolha um identificador para ela.
-- **`TransactionOutput.from(transaction)`** — converte o objeto de domínio (`Transaction`) para um objeto de saída específico deste caso de uso (`TransactionOutput`), explicado na próxima seção.
+- **`new Transaction(input.description(), amountInReais, input.category())`** — usa o construtor de **três argumentos** de `Transaction` (seção 8.5), o que automaticamente gera um novo `TransactionId` internamente — reforçando, mais uma vez, que criar uma transação nova nunca exige que o chamador escolha um identificador para ela.
+- **`TransactionOutput.from(transaction)`** — converte o objeto de domínio (`Transaction`) para um objeto de saída específico deste caso de uso (`TransactionOutput`), já explicado na seção 8.7.
 
-### 8.8. `PersistTransactionInput` e `TransactionOutput`: DTOs de entrada e saída, explicados do zero
+### 8.9. Passo 11 — Criar o pacote `infrastructure` (vazio)
 
-```java
-package dio.budgeting.application.input;
+**📁 Local (novo):** `budgeting/src/main/java/dio/budgeting/infrastructure/`
 
-import dio.budgeting.domain.Category;
-import org.springframework.ai.tool.annotation.ToolParam;
+**O que fazer:** apenas **crie o pacote**, sem nenhum arquivo dentro dele ainda — um marcador de que a próxima camada (persistência real) chega na Parte 9.
 
-public record PersistTransactionInput(@ToolParam(description = "Descrição do gasto") String description,
-                                      @ToolParam(description = "Valor do gasto (em centavos)") long amount,
-                                      Category category) {
-}
+### 8.10. Verificando esta etapa: não há teste de integração, apenas compilação
+
+Diferente de todas as Partes anteriores (3 a 7), esta Parte **não tem** nenhum arquivo `...IT.java` novo para rodar. Isso é intencional, e vale entender por quê, para não ficar procurando um teste que não existe.
+
+**Por que não há teste de integração aqui:** um teste `IT`, até agora, sempre validava uma integração **real e executável** — uma chamada de verdade ao Gemini (Partes 3 a 7), ou o comportamento de uma ferramenta já registrada em um `ChatClient` (Parte 5). Nesta Parte, porém, `TransactionRepository` (seção 8.6) é **apenas uma interface, sem nenhuma implementação concreta ainda** — não existe, hoje, nenhum objeto real capaz de, de fato, salvar ou buscar uma `Transaction` em lugar nenhum (nem em memória, nem em banco). Tentar escrever um teste de integração para `PersistTransactionUseCase` agora exigiria ou implementar a persistência antes da hora (o assunto da Parte 9), ou usar um objeto "falso" (um *mock*, mencionado de leve desde os avisos do Mockito que você já viu nos logs) só para o teste rodar — nenhuma das duas opções está no escopo desta Parte.
+
+**O que valida esta etapa, então:** a garantia de que **todo o código novo compila sem erros** — ou seja, que a sintaxe está correta, que todos os tipos referenciados existem e estão importados corretamente, que o Lombok está gerando os métodos esperados (`@Getter`, `@AllArgsConstructor`), e que não há nenhuma referência quebrada entre as classes novas (`TransactionId`, `Category`, `Transaction`, `TransactionRepository`, `PersistTransactionInput`, `TransactionOutput`, `PersistTransactionUseCase`).
+
+**Como confirmar isso, na prática:**
+
+```bash
+./gradlew clean compileJava
 ```
 
-```java
-package dio.budgeting.application.output;
-import dio.budgeting.domain.Transaction;
+- **`compileJava`** — a *task* do Gradle responsável especificamente por compilar o código de produção (`src/main/java/...`), sem rodar nenhum teste.
+- **`clean`** — força uma recompilação completa do zero, útil aqui especialmente porque você acabou de editar o `build.gradle` (Passo 4, adicionando o Lombok) — a mesma cautela já registrada na dica prática da Parte 1.5, sobre o cache do Gradle não refletir imediatamente mudanças de configuração.
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-
-public record TransactionOutput(String id, String description, String category, double value) {
-    public static TransactionOutput from(Transaction transaction) {
-        return new TransactionOutput(
-                transaction.getId().uuid().toString(),
-                transaction.getDescription(),
-                transaction.getCategory().name(),
-                BigDecimal.valueOf(transaction.getAmount()).setScale(2, RoundingMode.HALF_UP).doubleValue()
-        );
-    }
-}
+**Resultado esperado:**
+```
+BUILD SUCCESSFUL
 ```
 
-> **O que é um DTO (*Data Transfer Object*), explicado do zero, e por que não usar `Transaction` diretamente em todo lugar?** Um DTO é um objeto cuja **única** responsabilidade é **carregar dados** entre diferentes camadas ou processos de um sistema — sem nenhuma lógica de negócio própria (comparado com `Transaction`, que representa um conceito de domínio "de verdade"). `PersistTransactionInput` (o que o caso de uso *recebe*) e `TransactionOutput` (o que ele *devolve*) são exatamente isso: eles isolam o caso de uso do **formato exato** usado pelas camadas que o cercam — a IA, ao extrair dados da fala do usuário (Parte 11), ou a camada HTTP tradicional (Parte 10), que reaproveita esses mesmos DTOs. Se o formato de um request HTTP mudasse no futuro, por exemplo, isso não precisaria, necessariamente, alterar a estrutura interna de `Transaction`.
+Sem nenhuma linha de erro (`error: ...`) mencionando `Transaction`, `TransactionId`, `Category`, `TransactionRepository`, `PersistTransactionInput`, `TransactionOutput` ou `PersistTransactionUseCase`. Se o Lombok não tiver sido corretamente adicionado antes de `Transaction.java` (o alerta da tabela "Visão geral", no início desta Parte), o erro mais provável de aparecer aqui é algo como `cannot find symbol: method getId()` ou `constructor Transaction cannot be applied to given types` — sinal de que os métodos gerados pelo Lombok não foram reconhecidos, e vale conferir se o plugin foi mesmo adicionado e sincronizado.
 
-- **`@ToolParam(description = "...")`** — o equivalente, aplicado a um **parâmetro individual** de uma *tool*, da `description` já vista em `@Tool` (Parte 5.2, ao nível do método inteiro). Dá ao modelo um contexto específico sobre o **significado** de cada campo — especialmente útil quando os parâmetros formam um objeto mais complexo (como este `record`, com três campos), em vez de um único parâmetro primitivo simples (como era o caso de `sum(int a, int b)`, na Parte 5.2). Aqui, é explicitado que `amount` é esperado **em centavos** — uma informação essencial para que o modelo formate corretamente o valor extraído de uma frase falada (por exemplo, "R$ 80" precisa se tornar `8000`, e não `80`).
-- **Uma observação honesta sobre uma inconsistência real do código, conferida diretamente no `.zip`:** repare que apenas `description` e `amount` têm `@ToolParam`; **`category` não tem**. Isso não impede o funcionamento — o Spring AI ainda expõe `category` ao modelo (usando o nome do campo, e o fato de ser um `enum`, cujos valores possíveis já ficam implícitos na descoberta automática via reflexão, explicada na Parte 5.2), mas uma descrição explícita como *"a categoria do gasto, escolhida entre as opções disponíveis"* tornaria a instrução ainda mais clara para o modelo. Este é um pequeno e legítimo candidato de melhoria, listado na seção de Próximos Passos ao final deste tutorial.
-- **`BigDecimal` e `RoundingMode`, explicados do zero.** Ao converter o `double` interno de `Transaction` de volta para um valor "apresentável" em `TransactionOutput`, o código usa `BigDecimal` apenas para o passo de **arredondamento**:
-  - **`BigDecimal`** — uma classe do Java (pacote `java.math`) para representar números decimais com **precisão arbitrária**, sem os erros de arredondamento inerentes ao tipo `double` (mencionados na seção 8.4) — usada aqui **apenas** como uma ferramenta pontual de arredondamento controlado, e não como o tipo de armazenamento do domínio em si.
-  - **`BigDecimal.valueOf(transaction.getAmount())`** — converte o `double` já existente para um `BigDecimal` temporário.
-  - **`.setScale(2, RoundingMode.HALF_UP)`** — ajusta o número para exatamente **duas casas decimais**, usando a regra de arredondamento `HALF_UP` — "para cima a partir do dígito 5" (por exemplo, `125.335` arredondaria para `125.34`), a convenção de arredondamento mais familiar e usada no dia a dia.
-  - **`.doubleValue()`** — converte o `BigDecimal` já arredondado de volta para `double`, o tipo esperado pelo campo `value` de `TransactionOutput`.
-  - **Por que esse passo extra é necessário?** Porque um valor como `125.335000001` (um artefato comum de imprecisão de ponto flutuante, que pode surgir de operações anteriores em `double`) precisa ser "limpo" antes de ser exibido ao usuário final, evitando que apareçam casas decimais estranhas e sem sentido em uma resposta.
+### 8.11. Checkpoint da Parte 8
 
-### 8.9. Checkpoint da Parte 8
+| Arquivo | Ação nesta Parte |
+|---|---|
+| `budgeting/src/main/java/dio/budgeting/domain/TransactionId.java` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/domain/Category.java` | **Criado** |
+| `budgeting/build.gradle` | **Editado** — plugin `io.freefair.lombok` adicionado |
+| `budgeting/src/main/java/dio/budgeting/domain/Transaction.java` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/domain/TransactionRepository.java` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/application/input/PersistTransactionInput.java` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/application/output/TransactionOutput.java` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/application/PersistTransactionUseCase.java` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/infrastructure/` | **Criado** (pacote vazio) |
 
 Confirmado no `.zip`: o pacote `domain` contém `Transaction`, `TransactionId`, `Category` e `TransactionRepository` exatamente como descrito; o pacote `application` contém `PersistTransactionUseCase`, `application/input/PersistTransactionInput` e `application/output/TransactionOutput`. O `build.gradle` já inclui o plugin `io.freefair.lombok`. O pacote `infrastructure` já existe fisicamente neste ponto do projeto, mas ainda **vazio de implementação real** — isso só acontece na Parte 9.
 
