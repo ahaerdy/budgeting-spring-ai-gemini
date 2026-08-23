@@ -643,3 +643,82 @@ Incorporada ao `000-Tutorial_Budgeting_Spring_AI_COMPLETO.md`, Parte 7, **antes*
 **Próximo passo planejado:** Parte 8 do tutorial (Vídeo 08) — o domínio de negócio do projeto (`Transaction`, `Category`, `TransactionRepository`) e o primeiro caso de uso real (`PersistTransactionUseCase`), onde o padrão de Tool Calling (já validado na Parte 5) passa a ser aplicado pela primeira vez a uma operação de negócio de verdade, não mais a um exemplo didático.
 
 ---
+
+## 📝 LOG DE EXECUÇÃO — DIA 07
+
+**Data:** 23/08/2026
+**Contexto:** Execução completa da Parte 8 do tutorial (Vídeo 08) — o domínio de negócio do projeto (`Transaction`, `Category`, `TransactionId`, `TransactionRepository`) e o primeiro caso de uso real (`PersistTransactionUseCase`), com Tool Calling aplicado pela primeira vez a uma operação de negócio de verdade. Nesta mesma sessão, a Parte 8 do tutorial foi previamente reescrita no formato de receita explícita (11 passos, com `📁 Arquivo`/`✅` em cada seção, correção de uma inconsistência de ordem entre a edição do `build.gradle` e a criação de `Transaction.java`, e uma nova seção explicando por que esta Parte não tem teste de integração).
+
+---
+
+## 13. 🔌 Parte 8 do Tutorial — O domínio do negócio (Vídeo 08) — executada e concluída
+
+Objetivo desta etapa: dar ao projeto uma representação própria do domínio (`Transaction`, `Category`), organizada segundo os princípios de Domain-Driven Design e Clean Architecture, e o primeiro caso de uso real (`PersistTransactionUseCase`), já registrado como *tool* de IA desde sua criação.
+
+### 13.1. Arquivos criados/editados
+
+**`budgeting/src/main/java/dio/budgeting/domain/TransactionId.java`** (novo) — identificador fortemente tipado, `record` envolvendo um `UUID`, com construtor auxiliar sem argumentos para gerar um novo identificador aleatório.
+
+**`budgeting/src/main/java/dio/budgeting/domain/Category.java`** (novo) — `enum` com as três categorias suportadas (`GROCERIES`, `PHARMA`, `AUTO`).
+
+**`budgeting/build.gradle`** (editado) — adicionado o plugin `io.freefair.lombok`, versão `9.2.0`, ao bloco `plugins { }`.
+
+**`budgeting/src/main/java/dio/budgeting/domain/Transaction.java`** (novo) — a entidade de domínio, usando `@Getter`/`@AllArgsConstructor` do Lombok, com dois construtores (um gerado, um manual, gerando o `TransactionId` internamente para transações novas).
+
+**`budgeting/src/main/java/dio/budgeting/domain/TransactionRepository.java`** (novo) — a interface de domínio (o "contrato" de persistência), com `save(...)` e `findAllByCategory(...)`, sem nenhuma implementação nesta Parte.
+
+**`budgeting/src/main/java/dio/budgeting/application/input/PersistTransactionInput.java`** (novo) — DTO de entrada do caso de uso, com `@ToolParam` em `description` e `amount` (não em `category`, inconsistência já documentada no tutorial como candidato de melhoria).
+
+**`budgeting/src/main/java/dio/budgeting/application/output/TransactionOutput.java`** (novo) — DTO de saída, com o mapeamento `from(Transaction)` incluindo arredondamento via `BigDecimal`/`RoundingMode.HALF_UP`.
+
+**`budgeting/src/main/java/dio/budgeting/application/PersistTransactionUseCase.java`** (novo) — o primeiro caso de uso real, já anotado com `@Tool(name = "persistTransaction", ...)` desde sua criação, injetando `TransactionRepository` (a interface, ainda sem implementação concreta nesta Parte).
+
+**`budgeting/src/main/java/dio/budgeting/infrastructure/`** (novo, pacote vazio) — marcador para a camada de persistência real, implementada na Parte 9.
+
+### 13.2. Execução e validação
+
+Diferente de todas as Partes anteriores (3 a 7), esta Parte não tem nenhum teste de integração (`...IT.java`) — `TransactionRepository` ainda é só uma interface, sem implementação concreta para exercitar. A verificação, conforme orientado na seção 8.10 do tutorial (reescrita nesta mesma sessão), é apenas de **compilação**.
+
+**Comando executado:**
+```bash
+./gradlew clean compileJava
+```
+
+**Resultado do console:**
+```
+Starting a Gradle Daemon (subsequent builds will be faster)
+BUILD SUCCESSFUL in 12s
+3 actionable tasks: 3 executed
+```
+
+**Análise do resultado:**
+
+- **`BUILD SUCCESSFUL`, sem nenhuma linha de erro** — confirma que todo o código novo desta Parte (`TransactionId`, `Category`, `Transaction`, `TransactionRepository`, `PersistTransactionInput`, `TransactionOutput`, `PersistTransactionUseCase`) compilou corretamente: sintaxe válida, todos os tipos referenciados existentes e corretamente importados, e — ponto de atenção específico desta Parte — os métodos gerados pelo Lombok (`@Getter`, `@AllArgsConstructor` em `Transaction`) foram corretamente reconhecidos pelo compilador, confirmando que o plugin `io.freefair.lombok` foi adicionado e sincronizado com sucesso **antes** da criação de `Transaction.java`, na ordem correta indicada pelo tutorial.
+- **`"Starting a Gradle Daemon"`** — mesmo comportamento já observado no DIA 06 (Parte 7): primeira execução do Gradle nesta sessão/reinicialização, iniciando um novo processo *daemon* residente em memória.
+- **`3 actionable tasks: 3 executed`** — número de tarefas pequeno e coerente com o escopo do comando (`compileJava` foca apenas na compilação do código de produção, sem processar recursos de teste nem rodar testes) — diferente do `./gradlew test`, que envolveria mais tarefas (compilação de testes, execução, etc.).
+- **Ausência de qualquer menção a `cannot find symbol` ou `constructor ... cannot be applied`** — os dois erros mais prováveis, antecipados na seção 8.10 do tutorial, caso o Lombok não tivesse sido reconhecido corretamente. A ausência deles confirma que a ordem de execução (editar `build.gradle` antes de criar `Transaction.java`) foi seguida corretamente.
+
+### 13.3. ✅ Checkpoint da Parte 8 — fechado
+
+| Item | Status |
+| --- | --- |
+| `domain` — `TransactionId`, `Category`, `Transaction`, `TransactionRepository` criados | ✅ |
+| `build.gradle` — plugin Lombok adicionado, na ordem correta (antes de `Transaction.java`) | ✅ |
+| `application` — `PersistTransactionInput`, `TransactionOutput`, `PersistTransactionUseCase` criados, `@Tool` já registrado | ✅ |
+| `infrastructure` — pacote criado, vazio (aguardando Parte 9) | ✅ |
+| Verificação de compilação (`./gradlew clean compileJava`) — `BUILD SUCCESSFUL`, sem erros | ✅ |
+
+**Marca de confiança:** *(a preencher por Arthur, conforme critério definido em 17/08/2026 — ver nota no início deste documento)*
+
+### 13.4. 📚 Atualização aplicada ao tutorial, nesta mesma sessão
+
+Incorporada ao `000-Tutorial_Budgeting_Spring_AI_COMPLETO.md`, Parte 8, **antes** da execução registrada acima:
+
+- Reescrita integral no formato de receita explícita (tabela "Visão geral" com os 11 passos, `📁 Arquivo`/`✅` em cada uma das seções 8.2 a 8.9, antes ausentes — o documento só listava os arquivos na caixa do topo, sem repetir a instrução em cada seção específica).
+- **Correção de uma inconsistência de ordem identificada durante a reescrita:** a versão anterior instruía editar `build.gradle` (adicionar Lombok) como último passo da lista, mas o próprio texto já avisava "faça isso antes de escrever `Transaction.java`" — uma contradição na sequência numerada. A edição do `build.gradle` foi reposicionada para o Passo 4, imediatamente antes da criação de `Transaction.java` (Passo 5), eliminando a inconsistência.
+- **Nova seção 8.10**, explicando por que esta Parte não tem teste de integração (a ausência de uma implementação concreta de `TransactionRepository` até a Parte 9) e orientando a verificação por compilação (`./gradlew clean compileJava`), incluindo os erros mais prováveis caso o Lombok não tenha sido corretamente configurado.
+- Checkpoint renumerado para 8.11, com tabela listando cada arquivo e sua ação, no mesmo padrão das Partes 4 a 7.
+
+**Próximo passo planejado:** Parte 9 do tutorial (Vídeo 09) — implementação real da persistência (`JpaTransactionRepository`, `TransactionEntity`, Docker Compose com MySQL, Spring Data JPA), finalmente implementando a interface `TransactionRepository` criada nesta Parte e permitindo, pela primeira vez, testar `PersistTransactionUseCase` de ponta a ponta.
+
+---
