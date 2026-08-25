@@ -2208,16 +2208,19 @@ Na Parte 8, criamos `TransactionRepository` como uma interface (um "contrato") d
 
 Implementar, de fato, a interface `TransactionRepository`, persistindo transações em um banco de dados MySQL real, rodando em um container Docker — sem que a camada de domínio precise saber absolutamente nada sobre esse detalhe técnico.
 
-> **📁 Arquivos desta etapa:**
-> 1. **Criar** `compose.yml` **na raiz do projeto** (ao lado de `build.gradle`, **fora** de `src/`) — seção 9.2.
-> 2. **Editar** `build.gradle` — adicionar três dependências: `spring-boot-docker-compose` (`developmentOnly`), `spring-boot-starter-data-jpa` (`implementation`) e `mysql-connector-j` (`runtimeOnly`) — seção 9.3/9.4.
-> 3. **Editar** `application.properties` — adicionar `spring.jpa.hibernate.ddl-auto=update` e `spring.jpa.show-sql=true` (seção 9.8).
-> 4. **Criar pacotes** `infrastructure/persistence/entity/` e `infrastructure/persistence/repository/` dentro de `src/main/java/dio/budgeting/infrastructure/` (o pacote `infrastructure` já existia, vazio, desde a Parte 8).
-> 5. **Criar** `infrastructure/persistence/entity/TransactionEntity.java` (seção 9.5) — depende de `Transaction`, `TransactionId`, `Category` (já existentes desde a Parte 8).
-> 6. **Criar** `infrastructure/persistence/repository/TransactionEntityRepository.java` (seção 9.6) — depende de `TransactionEntity`.
-> 7. **Criar** `infrastructure/persistence/repository/JpaTransactionRepository.java` (seção 9.7) — depende de todos os anteriores, e é esta classe que finalmente **implementa** `TransactionRepository`.
->
-> Depois do passo 7, o projeto inteiro passa a compilar **e funcionar de ponta a ponta pela primeira vez** com persistência real — é um bom momento para rodar `BudgetingApplication` e confirmar, nos logs, que o Docker sobe o container do MySQL automaticamente (ver seção 9.3).
+### Visão geral desta etapa — os 7 passos, em ordem
+
+| Passo | Ação | Arquivo/Local |
+|---|---|---|
+| 1 | Criar `compose.yml` na raiz do projeto | `budgeting/compose.yml` |
+| 2 | Editar `build.gradle` — 3 dependências novas | `budgeting/build.gradle` |
+| 3 | Editar `application.properties` — 2 propriedades novas | `budgeting/src/main/resources/application.properties` |
+| 4 | Criar os pacotes `infrastructure/persistence/entity/` e `infrastructure/persistence/repository/` | `budgeting/src/main/java/dio/budgeting/infrastructure/persistence/` |
+| 5 | Criar `TransactionEntity` | `infrastructure/persistence/entity/TransactionEntity.java` |
+| 6 | Criar `TransactionEntityRepository` | `infrastructure/persistence/repository/TransactionEntityRepository.java` |
+| 7 | Criar `JpaTransactionRepository` | `infrastructure/persistence/repository/JpaTransactionRepository.java` |
+
+Depois do Passo 7, o projeto inteiro passa a compilar **e funcionar de ponta a ponta pela primeira vez** com persistência real — é um bom momento para rodar `BudgetingApplication` e confirmar, nos logs, que o Docker sobe o container do MySQL automaticamente. A seção 9.9, ao final, detalha exatamente como verificar isso, já que esta Parte — assim como a Parte 8 — não tem nenhum teste de integração (`...IT.java`) novo.
 
 ### 9.1. Docker e Docker Compose, explicados do zero
 
@@ -2225,7 +2228,13 @@ Implementar, de fato, a interface `TransactionRepository`, persistindo transaç�
 
 > **O que é Docker Compose, explicado do zero?** É uma ferramenta, que acompanha o Docker, para **descrever, em um único arquivo YAML**, um ou mais serviços de container e como eles devem ser configurados e conectados entre si — extremamente conveniente para ambientes de desenvolvimento com múltiplas dependências externas (mesmo que, no nosso caso, seja apenas uma: o banco de dados).
 
-### 9.2. `compose.yml`: descrevendo o banco de dados, linha por linha
+**Antes de começar**, confirme que o **Docker** (ou Docker Desktop) está instalado e **em execução** na sua máquina — sem ele, nenhum dos passos seguintes vai funcionar quando você subir a aplicação.
+
+### 9.2. Passo 1 — Criar `compose.yml`
+
+**📁 Arquivo (novo):** `budgeting/compose.yml` (na **raiz** do projeto, ao lado de `build.gradle` — **fora** de `src/`)
+
+**O que fazer:** crie este arquivo com o conteúdo completo:
 
 ```yaml
 services:
@@ -2250,6 +2259,8 @@ volumes:
   transaction_data:
 ```
 
+**✅ Este é o arquivo completo.**
+
 - **`services:`** — a seção raiz onde todos os "serviços" (cada um correspondendo, tipicamente, a um container) são declarados.
 - **`database:`** — o **nome escolhido** para este serviço específico dentro do arquivo — pode ser qualquer identificador, usado internamente pelo Docker Compose para se referir a este container.
 - **`image: mysql:9.6`** — declara a partir de qual **imagem** este container deve ser criado: `mysql`, na **tag** (versão específica) `9.6`, publicada oficialmente no Docker Hub (o repositório público de imagens Docker mais usado).
@@ -2267,21 +2278,45 @@ volumes:
 
   > **Por que isso é necessário — o processo do MySQL não fica pronto instantaneamente?** Não. Mesmo depois de o container "subir" (o processo do MySQL começar a rodar), ele ainda precisa de alguns segundos para inicializar completamente (criar o banco, aplicar as configurações iniciais). Sem um `healthcheck`, outros serviços que dependem do banco (como a própria aplicação Spring Boot) poderiam tentar se conectar **antes** dessa inicialização terminar, e falhar. O `healthcheck` permite que ferramentas externas (incluindo o próprio Spring Boot, através do mecanismo visto na próxima seção) esperem, de forma inteligente, até que o banco esteja realmente pronto.
 
-### 9.3. Integrando o Spring Boot ao Docker Compose automaticamente
+### 9.3. Passo 2 — Editar `build.gradle`: integrando o Spring Boot ao Docker Compose e adicionando JPA/MySQL
+
+**📁 Arquivo:** `budgeting/build.gradle` (editar)
+
+**O que fazer:** dentro do bloco `dependencies { }`, **adicione** estas três linhas:
 
 ```groovy
 developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
-```
-
-- **`developmentOnly`** — uma configuração especial do Gradle, equivalente, no vocabulário do Spring Boot, a dizer "inclua esta dependência **apenas** ao rodar a aplicação localmente, durante o desenvolvimento" — ela garante que esse artefato **não** seja empacotado no `.jar` final de produção, já que, em um ambiente real de produção, o banco provavelmente não seria gerenciado dessa forma automática (haveria um banco já existente, gerenciado separadamente).
-- Com essa dependência presente, o Spring Boot **detecta automaticamente** o arquivo `compose.yml` na raiz do projeto e **sobe o(s) container(s) sozinho**, ao iniciar a aplicação (e os derruba, automaticamente também, ao encerrá-la) — sem exigir que você rode manualmente nenhum comando `docker compose up` em um terminal separado. É esse comportamento automático que os logs de inicialização confirmam ao mostrar o Spring Boot criando rede, volume e container, extraindo essas informações diretamente da definição do `compose.yml`.
-
-### 9.4. Dependências de JPA e do driver MySQL, explicadas do zero
-
-```groovy
 implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 runtimeOnly 'com.mysql:mysql-connector-j'
 ```
+
+**✅ Depois desta edição, `dependencies { }` fica assim, completo** (acumulando tudo já adicionado nas Partes anteriores):
+
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    implementation platform("org.springframework.ai:spring-ai-bom:2.0.0")
+
+    //  implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+    implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'
+
+    developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+```
+
+**Integrando o Spring Boot ao Docker Compose automaticamente:**
+
+- **`developmentOnly`** — uma configuração especial do Gradle, equivalente, no vocabulário do Spring Boot, a dizer "inclua esta dependência **apenas** ao rodar a aplicação localmente, durante o desenvolvimento" — ela garante que esse artefato **não** seja empacotado no `.jar` final de produção, já que, em um ambiente real de produção, o banco provavelmente não seria gerenciado dessa forma automática (haveria um banco já existente, gerenciado separadamente).
+- Com essa dependência presente, o Spring Boot **detecta automaticamente** o arquivo `compose.yml` na raiz do projeto (Passo 1) e **sobe o(s) container(s) sozinho**, ao iniciar a aplicação (e os derruba, automaticamente também, ao encerrá-la) — sem exigir que você rode manualmente nenhum comando `docker compose up` em um terminal separado.
+
+**Dependências de JPA e do driver MySQL, explicadas do zero:**
 
 > **O que é JPA, explicado do zero?** JPA (*Jakarta Persistence API*) é uma **especificação padrão** do ecossistema Java para **mapeamento objeto-relacional** — ou seja, para representar, de forma automática e consistente, **tabelas** de um banco de dados relacional como **classes** Java, e **linhas** dessas tabelas como **objetos** dessas classes. Sendo apenas uma especificação (um conjunto de regras e interfaces), o JPA precisa de uma **implementação** de fato para funcionar — a mais usada, de longe, é o **Hibernate**, trazido automaticamente por este *starter*.
 
@@ -2291,7 +2326,44 @@ runtimeOnly 'com.mysql:mysql-connector-j'
   > **O que é um driver JDBC, explicado do zero?** JDBC (*Java Database Connectivity*) é a API padrão do Java para conectar-se a bancos de dados relacionais. Ela define **interfaces genéricas** (como "abrir uma conexão", "executar uma consulta SQL"), mas cada banco de dados específico (MySQL, PostgreSQL, Oracle, etc.) precisa de um **driver** — uma implementação concreta dessas interfaces, que sabe efetivamente como se comunicar, pela rede, no protocolo específico daquele banco. `mysql-connector-j` é o driver oficial para o MySQL.
 - **`runtimeOnly`** — diferente de `implementation` (usado nas dependências vistas até agora), esta palavra-chave declara que a dependência é necessária **apenas durante a execução** da aplicação, e **não durante a compilação**. Isso faz sentido aqui porque nenhuma linha do código Java que escrevemos referencia diretamente nenhuma classe do driver MySQL — é o próprio Hibernate/JPA quem o usa internamente, "por baixo dos panos", em tempo de execução.
 
-### 9.5. `TransactionEntity`: a entidade JPA, explicada linha por linha
+Depois de adicionar essas três linhas, lembre-se de sincronizar o Gradle antes de seguir.
+
+### 9.4. Passo 3 — Editar `application.properties`: criação automática do schema
+
+**📁 Arquivo:** `budgeting/src/main/resources/application.properties` (editar)
+
+**O que fazer:** **adicione** estas duas linhas ao final do arquivo:
+
+```properties
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+```
+
+**✅ Depois desta edição, `application.properties` fica assim, completo:**
+
+```properties
+spring.application.name=budgeting
+#spring.ai.openai.api-key=${OPENAI_API_KEY}
+spring.ai.google.genai.api-key=${GEMINI_API_KEY}
+spring.ai.google.genai.chat.options.model=gemini-3-flash-preview
+spring.ai.google.genai.chat.options.temperature=0.0
+logging.level.org.springframework.ai=DEBUG
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+```
+
+- **`spring.jpa.hibernate.ddl-auto`** — controla como o **Hibernate** gerencia o **schema** (a estrutura de tabelas, colunas e tipos do banco de dados) a partir das entidades JPA mapeadas no código Java.
+
+  > **O que é "DDL", explicado do zero?** DDL (*Data Definition Language*, "Linguagem de Definição de Dados") é o subconjunto de comandos SQL responsáveis por **criar e alterar a estrutura** do banco (`CREATE TABLE`, `ALTER TABLE`, e assim por diante) — em oposição a comandos que manipulam os **dados em si** (`INSERT`, `SELECT`, chamados de DML). `ddl-auto` controla, especificamente, se e como o Hibernate deve gerar e executar automaticamente esses comandos estruturais.
+  - O valor **`update`**, usado no projeto, instrui o Hibernate a **criar ou ajustar** automaticamente as tabelas necessárias (com base nas anotações `@Entity`, `@Id`, etc. que veremos nos próximos passos) toda vez que a aplicação sobe, **preservando os dados já existentes** entre uma execução e outra. Isso é diferente de outra opção comum, `create` (às vezes usada temporariamente durante um desenvolvimento muito inicial), que **recria** o schema inteiro do zero a cada subida, **apagando** qualquer dado já salvo — inadequada para um projeto em uso contínuo, como o `budgeting`.
+  - **Uma ressalva importante para o futuro:** `update` é adequado para desenvolvimento contínuo, como neste tutorial — mas, em um ambiente de **produção** de verdade, a prática recomendada pela indústria é usar ferramentas de **migração de schema dedicadas** (como Flyway ou Liquibase, que registram, de forma controlada e versionada, cada alteração estrutural feita ao longo do tempo), em vez de deixar o Hibernate alterar o schema automaticamente e sem rastro — algo a se ter em mente caso este projeto evolua além do escopo do desafio.
+- **`spring.jpa.show-sql=true`** — faz o Hibernate **imprimir no console**, para cada operação realizada, o comando SQL efetivamente executado — uma ferramenta valiosa de depuração, permitindo, por exemplo, conferir visualmente que a consulta gerada a partir de `findAllByCategory` (Passo 6) realmente filtra pela coluna esperada, sem precisar "confiar cegamente" no mecanismo automático de geração de query methods. **Essa propriedade específica é, aliás, o que vai permitir verificar o checkpoint desta Parte, na seção 9.9.**
+
+### 9.5. Passo 5 — Criar `TransactionEntity`
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/infrastructure/persistence/entity/TransactionEntity.java`
+
+**O que fazer:** crie primeiro os pacotes `infrastructure/persistence/entity/` e `infrastructure/persistence/repository/` (Passo 4), depois este arquivo dentro de `infrastructure/persistence/entity/`:
 
 ```java
 package dio.budgeting.infrastructure.persistence.entity;
@@ -2340,7 +2412,9 @@ public class TransactionEntity {
 }
 ```
 
-Esta classe vive no pacote `infrastructure.persistence.entity` — propositalmente **separada** da entidade de domínio `Transaction` (Parte 8.4), mesmo representando, conceitualmente, "a mesma coisa". Essa separação é uma decisão de arquitetura deliberada, alinhada com o princípio de Clean Architecture visto na Parte 8.1: `TransactionEntity` carrega anotações e preocupações específicas do JPA (como veremos a seguir), e sua estrutura poderia, um dia, divergir da estrutura pura do domínio (por exemplo, para acomodar colunas de auditoria — data de criação, usuário responsável — sem "sujar" a classe `Transaction`, que deve continuar representando apenas o conceito de negócio puro).
+**✅ Este é o arquivo completo.**
+
+Esta classe vive no pacote `infrastructure.persistence.entity` — propositalmente **separada** da entidade de domínio `Transaction` (Parte 8.5), mesmo representando, conceitualmente, "a mesma coisa". Essa separação é uma decisão de arquitetura deliberada, alinhada com o princípio de Clean Architecture visto na Parte 8.1: `TransactionEntity` carrega anotações e preocupações específicas do JPA (como veremos a seguir), e sua estrutura poderia, um dia, divergir da estrutura pura do domínio (por exemplo, para acomodar colunas de auditoria — data de criação, usuário responsável — sem "sujar" a classe `Transaction`, que deve continuar representando apenas o conceito de negócio puro).
 
 - **`@Entity`** — a anotação do JPA que marca esta classe como representando uma **tabela** do banco de dados. Por convenção padrão (sem nenhuma customização adicional, que poderia ser feita através de outra anotação, `@Table`), o nome da tabela gerada é derivado automaticamente do nome da classe: `transaction_entity`.
 - **`@Data`** (do Lombok) — uma anotação "combo", mais abrangente do que o `@Getter` isolado visto na Parte 8.5: gera, de uma vez, *getters* **e** *setters* para todos os campos, além de `toString()`, `equals()` e `hashCode()`. Entidades JPA tipicamente precisam de *setters* (diferente de `Transaction`, que não tinha nenhum), porque o **Hibernate os usa internamente**, via reflexão, ao reconstruir um objeto a partir dos dados lidos do banco.
@@ -2352,11 +2426,15 @@ Esta classe vive no pacote `infrastructure.persistence.entity` — propositalmen
 
   > **Por que essa anotação é necessária, e por que `STRING` e não o padrão?** Sem essa anotação, o comportamento padrão do JPA seria `EnumType.ORDINAL` — persistir apenas a **posição numérica** do valor dentro da declaração do `enum` (`0` para `GROCERIES`, `1` para `PHARMA`, `2` para `AUTO`, considerando a ordem declarada na Parte 8.3). Isso é **frágil**: se, no futuro, a ordem dos valores do `enum` mudasse (por exemplo, inserindo uma nova categoria **no meio** da lista já existente), os dados **já salvos** no banco ficariam com o significado completamente corrompido — uma linha que antes representava `PHARMA` (posição `1`) passaria a ser interpretada como qualquer categoria que acabasse ocupando essa mesma posição depois da mudança. `EnumType.STRING`, em vez disso, persiste o **nome literal** do valor (a coluna guarda, de fato, o texto `"GROCERIES"`) — mais legível ao inspecionar o banco diretamente, e imune a esse problema de reordenação futura.
 - **`from(Transaction transaction)`**, o **mapper de ida** — um método `static` que recebe um objeto de domínio e devolve a entidade JPA correspondente, extraindo cada valor através dos *getters* de `Transaction` (gerados pelo `@Getter` da Parte 8.5): `transaction.getId().uuid()` (o `UUID` de dentro do `TransactionId`), `getDescription()`, `getAmount()`, `getCategory()`.
-- **`toDomain()`**, o **mapper de volta** — reconstrói um objeto `Transaction` puro a partir dos dados armazenados na entidade, usando o construtor de `Transaction` que aceita um `TransactionId` já pronto (o gerado pelo `@AllArgsConstructor` da Parte 8.5) — essencial aqui, já que uma transação **lida de volta do banco** já possui um identificador definido (diferente de uma transação recém-criada, cujo id é gerado internamente, como vimos na Parte 8.4).
+- **`toDomain()`**, o **mapper de volta** — reconstrói um objeto `Transaction` puro a partir dos dados armazenados na entidade, usando o construtor de `Transaction` que aceita um `TransactionId` já pronto (o gerado pelo `@AllArgsConstructor` da Parte 8.5) — essencial aqui, já que uma transação **lida de volta do banco** já possui um identificador definido (diferente de uma transação recém-criada, cujo id é gerado internamente, como vimos na Parte 8.5).
 
   > **O que é um "mapper", explicado do zero?** Um mapper é, simplesmente, um método (ou classe) cuja única responsabilidade é **converter** entre duas representações diferentes de um mesmo conceito — aqui, entre `Transaction` (domínio) e `TransactionEntity` (persistência). Manter essa conversão isolada, em métodos claramente nomeados (`from`/`toDomain`), evita espalhar essa lógica de "tradução" por vários lugares do código, e deixa explícito, em qualquer ponto do sistema, quando uma conversão de camada está acontecendo.
 
-### 9.6. `TransactionEntityRepository`: o repositório Spring Data, explicado do zero
+### 9.6. Passo 6 — Criar `TransactionEntityRepository`
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/infrastructure/persistence/repository/TransactionEntityRepository.java`
+
+**O que fazer:** crie este arquivo, dentro de `infrastructure/persistence/repository/`, com este conteúdo:
 
 ```java
 package dio.budgeting.infrastructure.persistence.repository;
@@ -2373,14 +2451,20 @@ public interface TransactionEntityRepository extends CrudRepository<TransactionE
 }
 ```
 
-- **`CrudRepository<TransactionEntity, UUID>`** — uma interface do **Spring Data** (não confundir com o JPA "cru" — Spring Data é a camada de conveniência mencionada na seção 9.4). Apenas por **estender** esta interface (usando `extends`, o mesmo mecanismo de herança de interfaces já visto na Parte 3.1, com `ChatModel extends Model<...>`), `TransactionEntityRepository` já ganha, **automaticamente e sem nenhuma linha de implementação escrita**, um conjunto completo de operações básicas de CRUD (*Create, Read, Update, Delete* — "Criar, Ler, Atualizar, Apagar", as quatro operações fundamentais sobre dados persistidos): métodos como `save(...)`, `findById(...)`, `findAll()`, `deleteById(...)` já existem, prontos para uso, assim que a aplicação sobe. Os dois parâmetros genéricos entre `< >` informam ao Spring Data qual é o **tipo da entidade** gerenciada (`TransactionEntity`) e qual é o **tipo da chave primária** dela (`UUID`).
+**✅ Este é o arquivo completo.**
+
+- **`CrudRepository<TransactionEntity, UUID>`** — uma interface do **Spring Data** (não confundir com o JPA "cru" — Spring Data é a camada de conveniência mencionada na seção 9.3). Apenas por **estender** esta interface (usando `extends`, o mesmo mecanismo de herança de interfaces já visto na Parte 3.1, com `ChatModel extends Model<...>`), `TransactionEntityRepository` já ganha, **automaticamente e sem nenhuma linha de implementação escrita**, um conjunto completo de operações básicas de CRUD (*Create, Read, Update, Delete* — "Criar, Ler, Atualizar, Apagar", as quatro operações fundamentais sobre dados persistidos): métodos como `save(...)`, `findById(...)`, `findAll()`, `deleteById(...)` já existem, prontos para uso, assim que a aplicação sobe. Os dois parâmetros genéricos entre `< >` informam ao Spring Data qual é o **tipo da entidade** gerenciada (`TransactionEntity`) e qual é o **tipo da chave primária** dela (`UUID`).
 
   > **Como o Spring Data consegue "implementar" uma interface sem nenhum código escrito?** Em tempo de execução, o Spring Data gera **dinamicamente** (usando, mais uma vez, o mecanismo de reflexão já mencionado na Parte 5.2, combinado com geração de código em memória) uma classe concreta que implementa `TransactionEntityRepository`, com toda a lógica de acesso ao banco já embutida — o programador nunca vê nem escreve essa classe gerada; ele só declara a interface e usa.
 - **`List<TransactionEntity> findAllByCategory(Category category);`** — este método **não existe** em `CrudRepository` — é uma adição específica desta interface. Ele segue a convenção de nomenclatura de **query methods** ("métodos de consulta") do Spring Data:
 
   > **O que são "query methods", explicado do zero?** É um recurso do Spring Data em que, a partir do **nome do método** (seguindo um padrão específico), a consulta SQL correspondente é **inferida e gerada automaticamente** — sem que uma única linha de SQL precise ser escrita manualmente. Aqui, o nome `findAllByCategory` é interpretado, palavra por palavra, como: `findAll` ("buscar todos") + `By` (separador) + `Category` (o nome do campo a filtrar, que precisa corresponder exatamente a um campo existente na entidade `TransactionEntity`) — resultando, internamente, em uma consulta equivalente a `SELECT * FROM transaction_entity WHERE category = ?`.
 
-### 9.7. `JpaTransactionRepository`: a implementação concreta do contrato de domínio, finalmente
+### 9.7. Passo 7 — Criar `JpaTransactionRepository`
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/infrastructure/persistence/repository/JpaTransactionRepository.java`
+
+**O que fazer:** crie este arquivo, no mesmo pacote `infrastructure/persistence/repository/`, com este conteúdo:
 
 ```java
 package dio.budgeting.infrastructure.persistence.repository;
@@ -2418,38 +2502,73 @@ public class JpaTransactionRepository implements TransactionRepository {
 }
 ```
 
+**✅ Este é o arquivo completo.**
+
 Esta é a classe que **fecha o ciclo** iniciado com a declaração do contrato na Parte 8.6: ela `implements TransactionRepository` — a palavra-chave `implements`, diferente de `extends`, usada aqui porque `JpaTransactionRepository` é uma **classe concreta** fornecendo a implementação real de uma **interface**.
 
-- **`@Repository`** — uma anotação de estereótipo do Spring (assim como `@Service` e `@RestController`, já vistas), especificamente pensada para marcar componentes de **acesso a dados**. É graças a esta anotação, combinada com `implements TransactionRepository`, que o Spring — ao ver `PersistTransactionUseCase` pedindo, no construtor (Parte 8.7), um objeto do tipo `TransactionRepository` — sabe exatamente **qual** implementação injetar: esta.
+- **`@Repository`** — uma anotação de estereótipo do Spring (assim como `@Service` e `@RestController`, já vistas), especificamente pensada para marcar componentes de **acesso a dados**. É graças a esta anotação, combinada com `implements TransactionRepository`, que o Spring — ao ver `PersistTransactionUseCase` pedindo, no construtor (Parte 8.8), um objeto do tipo `TransactionRepository` — sabe exatamente **qual** implementação injetar: esta.
 - **`private final TransactionEntityRepository transactionEntityRepository;`** e injeção via construtor — o padrão já muito familiar a esta altura.
 - **`save(Transaction transaction)`** — implementa o método exigido pela interface de domínio, combinando três passos, cada um já explicado individualmente: (1) `TransactionEntity.from(transaction)` — o **mapper de ida** (seção 9.5), convertendo o objeto de domínio para a entidade JPA; (2) `transactionEntityRepository.save(entity)` — a persistência de fato, usando o método herdado de `CrudRepository` (seção 9.6); (3) `.toDomain()` — o **mapper de volta**, convertendo o resultado salvo de volta para o tipo de domínio, **antes** de devolvê-lo ao chamador. O ponto central a notar: quem chama `JpaTransactionRepository.save(...)` (como `PersistTransactionUseCase`) **nunca vê** o tipo `TransactionEntity` — ele entra como `Transaction` e sai como `Transaction`, com toda a conversão intermediária escondida dentro desta classe.
 - **`@Override`** — uma anotação (não estritamente obrigatória para o código funcionar, mas fortemente recomendada como boa prática) que informa ao compilador: "este método deve estar, de fato, sobrescrevendo/implementando um método herdado de uma interface ou superclasse". Se, por engano, o nome do método fosse digitado errado (por exemplo, `saves` em vez de `save`), o compilador **rejeitaria a compilação imediatamente**, apontando o erro — em vez de, silenciosamente, criar um método novo e desconectado que nunca seria de fato chamado pelo mecanismo de interface esperado.
 - **`findAllByCategory(Category category)`** — busca as entidades daquela categoria através do *query method* já visto (seção 9.6), e então:
   - **`.stream()`** — converte a `List<TransactionEntity>` retornada em um **`Stream`**, a API funcional de processamento de coleções do Java moderno.
 
-    > **O que é um `Stream`, explicado do zero?** Um `Stream` representa uma **sequência de elementos** sobre a qual é possível aplicar operações **encadeadas**, no estilo de API fluente já visto na Parte 4.1 — como transformar cada elemento (`.map(...)`), filtrar apenas alguns (`.filter(...)`, já visto na Parte 7.3), e finalmente **coletar** o resultado em alguma estrutura concreta (como uma nova lista). É uma forma mais declarativa (descrevendo *o quê* fazer com os dados) de processar coleções, em contraste com um laço `for` tradicional (que descreve *como*, passo a passo, iterar manualmente).
+    > **O que é um `Stream`, explicado do zero?** Um `Stream` representa uma **sequência de elementos** sobre a qual é possível aplicar operações **encadeadas**, no estilo de API fluente já visto na Parte 4.1 — como transformar cada elemento (`.map(...)`), filtrar apenas alguns (`.filter(...)`, já visto na Parte 7.5), e finalmente **coletar** o resultado em alguma estrutura concreta (como uma nova lista). É uma forma mais declarativa (descrevendo *o quê* fazer com os dados) de processar coleções, em contraste com um laço `for` tradicional (que descreve *como*, passo a passo, iterar manualmente).
   - **`.map(TransactionEntity::toDomain)`** — transforma cada `TransactionEntity` do *stream* em uma `Transaction`, usando uma **referência a método** (`TransactionEntity::toDomain`) — uma forma abreviada de escrever `entity -> entity.toDomain()`, aproveitando que o método `toDomain()` já existe exatamente com a assinatura que `.map(...)` espera (recebe um item, devolve outro).
   - **`.toList()`** — finaliza o *stream*, **coletando** todos os elementos já transformados de volta em uma `List<Transaction>` concreta, imutável.
 
-### 9.8. `application.properties`: criação automática do schema, explicado do zero
+### 9.8. O que muda em `PersistTransactionUseCase` a partir de agora
 
-```properties
-spring.jpa.hibernate.ddl-auto=update
-spring.jpa.show-sql=true
+Nenhuma linha do arquivo `PersistTransactionUseCase.java` (Parte 8.8) precisa ser editada — e vale entender **por que**, reforçando o ganho da Clean Architecture (seção 8.1). O construtor desse caso de uso já pedia um `TransactionRepository`:
+
+```java
+public PersistTransactionUseCase(TransactionRepository transactionRepository) {
+    this.transactionRepository = transactionRepository;
+}
 ```
 
-- **`spring.jpa.hibernate.ddl-auto`** — controla como o **Hibernate** gerencia o **schema** (a estrutura de tabelas, colunas e tipos do banco de dados) a partir das entidades JPA mapeadas no código Java.
+Até o fim da Parte 8, o Spring **não tinha nenhuma implementação concreta** dessa interface para injetar ali — o contexto da aplicação, se você tentasse rodá-la, falharia ao subir, reclamando que não conseguiu encontrar um *bean* de `TransactionRepository`. Agora que `JpaTransactionRepository` existe (Passo 7), anotada com `@Repository` e implementando `TransactionRepository`, o Spring passa a **injetá-la automaticamente** nesse mesmo construtor, sem que uma única linha de `PersistTransactionUseCase` precise mudar. Essa é a demonstração mais concreta, até aqui, do que a inversão de dependência (seção 8.1) realmente proporciona na prática.
 
-  > **O que é "DDL", explicado do zero?** DDL (*Data Definition Language*, "Linguagem de Definição de Dados") é o subconjunto de comandos SQL responsáveis por **criar e alterar a estrutura** do banco (`CREATE TABLE`, `ALTER TABLE`, e assim por diante) — em oposição a comandos que manipulam os **dados em si** (`INSERT`, `SELECT`, chamados de DML). `ddl-auto` controla, especificamente, se e como o Hibernate deve gerar e executar automaticamente esses comandos estruturais.
-  - O valor **`update`**, usado no projeto, instrui o Hibernate a **criar ou ajustar** automaticamente as tabelas necessárias (com base nas anotações `@Entity`, `@Id`, etc. já vistas) toda vez que a aplicação sobe, **preservando os dados já existentes** entre uma execução e outra. Isso é diferente de outra opção comum, `create` (às vezes usada temporariamente durante um desenvolvimento muito inicial), que **recria** o schema inteiro do zero a cada subida, **apagando** qualquer dado já salvo — inadequada para um projeto em uso contínuo, como o `budgeting`.
-  - **Uma ressalva importante para o futuro:** `update` é adequado para desenvolvimento contínuo, como neste tutorial — mas, em um ambiente de **produção** de verdade, a prática recomendada pela indústria é usar ferramentas de **migração de schema dedicadas** (como Flyway ou Liquibase, que registram, de forma controlada e versionada, cada alteração estrutural feita ao longo do tempo), em vez de deixar o Hibernate alterar o schema automaticamente e sem rastro — algo a se ter em mente caso este projeto evolua além do escopo do desafio.
-- **`spring.jpa.show-sql=true`** — faz o Hibernate **imprimir no console**, para cada operação realizada, o comando SQL efetivamente executado — uma ferramenta valiosa de depuração, permitindo, por exemplo, conferir visualmente que a consulta gerada a partir de `findAllByCategory` (seção 9.6) realmente filtra pela coluna esperada, sem precisar "confiar cegamente" no mecanismo automático de geração de query methods.
+### 9.9. Verificando esta etapa: como testar o checkpoint
 
-### 9.9. Checkpoint da Parte 9
+Assim como a Parte 8, esta Parte **não tem** nenhum arquivo `...IT.java` novo — mas, diferente da Parte 8 (onde só era possível verificar a compilação, já que não existia nenhuma implementação para exercitar), agora `PersistTransactionUseCase` já tem uma implementação real de `TransactionRepository` por trás. Ainda assim, não há um teste automatizado específico para esta Parte no projeto original — a verificação é feita **rodando a aplicação e inspecionando os logs**, complementada por uma conferência direta no banco de dados. Siga os passos abaixo, em ordem:
+
+**1. Confirme que o Docker está rodando**, antes de tudo:
+```bash
+docker info
+```
+Se esse comando devolver um erro (em vez de informações sobre o Docker), o Docker não está em execução — inicie-o antes de continuar.
+
+**2. Rode `BudgetingApplication`** (pela IDE, ou `./gradlew bootRun`), e observe os logs de perto. Você deve ver, nesta ordem:
+
+- Linhas mencionando a criação de rede, volume e container pelo Spring Boot Docker Compose (algo como `Creating Docker Compose service...`, `Container budgeting-database-1 Starting`, `Container budgeting-database-1 Healthy`) — a confirmação de que a integração da Parte 9.3 está funcionando, e que o `healthcheck` (Passo 1) foi respeitado antes de a aplicação prosseguir.
+- Uma sequência de comandos `Hibernate:` (graças a `spring.jpa.show-sql=true`, Passo 3), incluindo algo como:
+  ```
+  Hibernate: create table transaction_entity (id binary(255) not null, amount float(53) not null, category varchar(255), description varchar(255), primary key (id)) engine=InnoDB
+  ```
+  — a confirmação **visual e direta** de que o Hibernate, através de `spring.jpa.hibernate.ddl-auto=update` (Passo 3), efetivamente criou a tabela `transaction_entity` no banco, a partir das anotações de `TransactionEntity` (Passo 5).
+- `Started BudgetingApplication in X.XXX seconds`, sem nenhuma linha `ERROR` — confirmando que toda a cadeia (Docker → MySQL saudável → conexão JDBC → criação de schema → contexto do Spring completo) funcionou sem falhas.
+
+**3. (Opcional, mas recomendado) Confirme a tabela diretamente no banco**, usando um cliente MySQL qualquer — o painel de banco de dados integrado da sua IDE, ou pelo terminal, conectando-se ao container:
+```bash
+docker exec -it $(docker ps -qf "name=database") mysql -uapp -papp transaction -e "DESCRIBE transaction_entity;"
+```
+Isso deve listar as quatro colunas esperadas (`id`, `description`, `amount`, `category`), confirmando que a tabela foi criada corretamente e com a estrutura certa — mesmo que ainda **vazia**, já que nenhuma transação foi persistida de verdade ainda (isso só se torna possível de testar via HTTP a partir da Parte 10, ou via voz a partir da Parte 11).
+
+**Se qualquer uma dessas três verificações falhar:** o problema mais provável está relacionado ao Docker não estar rodando, ao `healthcheck` do Passo 1 não ter sido copiado corretamente, ou às três dependências do Passo 2 não terem sido adicionadas antes de tentar rodar a aplicação — revise essas seções antes de seguir para a Parte 10.
+
+### 9.10. Checkpoint da Parte 9
+
+| Arquivo | Ação nesta Parte |
+|---|---|
+| `budgeting/compose.yml` | **Criado** |
+| `budgeting/build.gradle` | **Editado** — `spring-boot-docker-compose`, `spring-boot-starter-data-jpa`, `mysql-connector-j` adicionados |
+| `budgeting/src/main/resources/application.properties` | **Editado** — `spring.jpa.hibernate.ddl-auto` e `spring.jpa.show-sql` adicionados |
+| `budgeting/src/main/java/dio/budgeting/infrastructure/persistence/entity/TransactionEntity.java` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/infrastructure/persistence/repository/TransactionEntityRepository.java` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/infrastructure/persistence/repository/JpaTransactionRepository.java` | **Criado** |
 
 Confirmado no `.zip`: `compose.yml` na raiz do projeto define o serviço `database` (MySQL `9.6`); `build.gradle` inclui `spring-boot-docker-compose` (`developmentOnly`), `spring-boot-starter-data-jpa` e `mysql-connector-j` (`runtimeOnly`); os pacotes `infrastructure.persistence.entity` (`TransactionEntity`) e `infrastructure.persistence.repository` (`TransactionEntityRepository`, `JpaTransactionRepository`) existem exatamente como descrito; `application.properties` tem `spring.jpa.hibernate.ddl-auto=update` e `spring.jpa.show-sql=true`.
-
-**Para rodar você mesmo:** é necessário ter o **Docker** (ou Docker Desktop) instalado e **em execução** na sua máquina antes de subir a aplicação — é ele quem efetivamente executa o container do MySQL que o Spring Boot orquestra automaticamente, através do `compose.yml`, graças à dependência `spring-boot-docker-compose`.
 
 **Recapitulando:** agora o domínio construído na Parte 8 tem, finalmente, um lugar real para persistir suas transações — o contrato (`TransactionRepository`) permanece intocado no pacote `domain`, e toda a complexidade técnica de fato (Docker, MySQL, JPA, mapeamento) ficou isolada dentro de `infrastructure`. A Parte 10 vai finalmente expor tudo isso via uma API REST tradicional, e a Parte 11 vai conectar o pipeline de IA a este mesmo domínio.
 
