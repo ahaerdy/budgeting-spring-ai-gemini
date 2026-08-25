@@ -722,3 +722,117 @@ Incorporada ao `000-Tutorial_Budgeting_Spring_AI_COMPLETO.md`, Parte 8, **antes*
 **Próximo passo planejado:** Parte 9 do tutorial (Vídeo 09) — implementação real da persistência (`JpaTransactionRepository`, `TransactionEntity`, Docker Compose com MySQL, Spring Data JPA), finalmente implementando a interface `TransactionRepository` criada nesta Parte e permitindo, pela primeira vez, testar `PersistTransactionUseCase` de ponta a ponta.
 
 ---
+
+## 📝 LOG DE EXECUÇÃO — DIA 08
+
+**Data:** 25/08/2026
+**Contexto:** Execução completa da Parte 9 do tutorial (Vídeo 09) — persistência real do domínio via MySQL, orquestrado por Docker Compose, e Spring Data JPA (`TransactionEntity`, `TransactionEntityRepository`, `JpaTransactionRepository`), finalmente implementando a interface `TransactionRepository` (contrato definido na Parte 8). Verificação em três frentes: log de subida da aplicação no console do IntelliJ, saída de `docker info`, e inspeção direta da tabela criada no banco via `docker exec`.
+
+---
+
+## 14. 🔌 Parte 9 do Tutorial — Persistência real: MySQL via Docker Compose e Spring Data JPA (Vídeo 09) — executada e concluída
+
+Objetivo desta etapa: dar ao contrato `TransactionRepository` (Parte 8.6) uma implementação real, persistindo transações em um banco MySQL rodando em container Docker, orquestrado automaticamente pelo próprio Spring Boot — sem que a camada de domínio precise saber nada sobre esse detalhe técnico (o ganho concreto da Clean Architecture, conforme já discutido na Parte 8.1).
+
+### 14.1. Arquivos criados/editados
+
+Conforme os 7 passos descritos na seção 9.2 a 9.7 do tutorial:
+
+**`budgeting/compose.yml`** (novo, na raiz do projeto) — define o serviço `database` (imagem `mysql:9.6`), variáveis de ambiente do MySQL (`MYSQL_DATABASE=transaction`, usuário `app`/senha `app`), porta mapeada `3307:3306` (evitando conflito com uma eventual instalação local na porta padrão), volume nomeado `transaction_data` (persistência entre reinicializações do container) e `healthcheck` via `mysqladmin ping`.
+
+**`budgeting/build.gradle`** (editado) — três dependências novas: `developmentOnly 'org.springframework.boot:spring-boot-docker-compose'` (integração automática com o `compose.yml`, sem exigir `docker compose up` manual), `implementation 'org.springframework.boot:spring-boot-starter-data-jpa'` (Spring Data JPA + Hibernate) e `runtimeOnly 'com.mysql:mysql-connector-j'` (driver JDBC do MySQL).
+
+**`budgeting/src/main/resources/application.properties`** (editado) — duas propriedades novas: `spring.jpa.hibernate.ddl-auto=update` (Hibernate cria/ajusta o schema automaticamente, preservando dados já existentes) e `spring.jpa.show-sql=true` (log das instruções SQL geradas).
+
+**`budgeting/src/main/java/dio/budgeting/infrastructure/persistence/entity/TransactionEntity.java`** (novo) — entidade JPA (`@Entity`/`@Id`/`@Enumerated(EnumType.STRING)` em `category`, evitando o problema de fragilidade do `EnumType.ORDINAL` padrão), com os mappers `from(Transaction)` (domínio → entidade) e `toDomain()` (entidade → domínio).
+
+**`budgeting/src/main/java/dio/budgeting/infrastructure/persistence/repository/TransactionEntityRepository.java`** (novo) — interface estendendo `CrudRepository<TransactionEntity, UUID>` (CRUD básico ganho automaticamente), com o *query method* adicional `findAllByCategory(Category category)`.
+
+**`budgeting/src/main/java/dio/budgeting/infrastructure/persistence/repository/JpaTransactionRepository.java`** (novo) — a classe que fecha o ciclo aberto na Parte 8.6: `@Repository`, `implements TransactionRepository`, injetando `TransactionEntityRepository` e implementando `save(...)` e `findAllByCategory(...)` através dos mappers de `TransactionEntity`.
+
+Nenhuma linha de `PersistTransactionUseCase.java` (Parte 8.8) precisou ser alterada — assim que `JpaTransactionRepository` passa a existir como *bean* gerenciado pelo Spring, ele é injetado automaticamente no construtor que já pedia um `TransactionRepository`, sem nenhuma mudança de código no caso de uso.
+
+### 14.2. Execução e validação
+
+Diferente das Partes 3 a 7, e assim como a Parte 8, esta Parte não tem nenhum teste de integração (`...IT.java`) novo. A verificação, conforme a seção 9.9 do tutorial, foi feita em três passos: (1) confirmar que o Docker está em execução, (2) subir `BudgetingApplication` e inspecionar o log, (3) inspecionar a tabela criada diretamente no banco.
+
+**Passo 1 — `docker info`:**
+
+Confirma o Docker Engine em execução (Community, versão `29.6.1`), com `6` containers no total (`Running: 1`, `Stopped: 5`) no momento da consulta. O único container em execução corresponde, como esperado, a `budgeting-database-1` (confirmado no log de subida a seguir); os `5` containers parados são resquícios de sessões anteriores (por exemplo, execuções passadas do mesmo container do MySQL entre reinicializações, ou containers de testes de integração de sessões anteriores) e não indicam nenhum problema para esta verificação.
+
+**Passo 2 — Log de subida da aplicação (console do IntelliJ):**
+
+```
+2026-08-25T13:34:07.009-03:00  INFO ... DockerComposeLifecycleManager : Using Docker Compose file .../budgeting/compose.yml
+2026-08-25T13:34:07.673-03:00  INFO ... DockerCli   :  Container budgeting-database-1 Starting
+2026-08-25T13:34:08.338-03:00  INFO ... DockerCli   :  Container budgeting-database-1 Started
+2026-08-25T13:34:08.339-03:00  INFO ... DockerCli   :  Container budgeting-database-1 Waiting
+2026-08-25T13:34:13.853-03:00  INFO ... DockerCli   :  Container budgeting-database-1 Healthy
+...
+2026-08-25T13:34:16.888-03:00  INFO ... HHH10001005: Database info:
+	Database JDBC URL [jdbc:mysql://127.0.0.1:3307/transaction]
+	Database driver: MySQL Connector/J
+	Database dialect: MySQLDialect
+	Database version: 9.6
+...
+2026-08-25T13:34:19.071-03:00  INFO ... Started BudgetingApplication in 12.803 seconds (process running for 13.501)
+```
+
+**Análise do resultado:**
+
+- **`DockerComposeLifecycleManager` + sequência `Starting` → `Started` → `Waiting` → `Healthy`** — confirma exatamente a cadeia esperada pela seção 9.9 do tutorial: o Spring Boot detectou `compose.yml` sozinho (graças a `developmentOnly 'spring-boot-docker-compose'`, Passo 2), subiu o container do MySQL automaticamente, e **esperou o `healthcheck` (Passo 1) responder saudável antes de prosseguir** — o intervalo de `~5,5s` entre `Waiting` e `Healthy` é coerente com o `interval: 5s` configurado no `healthcheck` do `compose.yml`.
+- **`HHH10001005: Database info`** — confirma a conexão JDBC de fato estabelecida, na porta `3307` (a porta mapeada, não a `3306` interna do container), no banco `transaction`, dialeto `MySQLDialect`, versão `9.6` — exatamente os parâmetros declarados em `compose.yml` e inferidos por `mysql-connector-j` (Passo 2) a partir da URL de conexão.
+- **`HikariPool-1 - Start completed`** (linha anterior, não reproduzida acima) — confirma o *pool* de conexões (HikariCP, trazido transitivamente por `spring-boot-starter-data-jpa`) estabelecido com sucesso sobre essa mesma conexão.
+- **`Started BudgetingApplication in 12.803 seconds`, sem nenhuma linha `ERROR`** — confirma que toda a cadeia describe na seção 9.9 (Docker → MySQL saudável → conexão JDBC → contexto do Spring completo) funcionou sem falhas.
+- **Linha `DEBUG ... ToolCallingAutoConfiguration : Cannot load class: org.springframework.security.oauth2.client.ClientAuthorizationException`** — mensagem de nível `DEBUG`, não um erro: o auto-configurador de Tool Calling (mecanismo já validado na Parte 5) apenas verifica, na inicialização, se uma classe **opcional** relacionada a OAuth2 está no classpath (não está, e não precisa estar, já que este projeto não usa esse mecanismo de autenticação) — comportamento esperado, sem impacto funcional.
+- **Linha `WARN ... spring.jpa.open-in-view is enabled by default`** — aviso rotineiro do Spring Data JPA (o padrão `open-in-view=true` mantém a sessão do Hibernate aberta durante a renderização da view), não específico desta Parte nem indicativo de erro; o próprio aviso já sugere a configuração explícita como boa prática futura, mas não bloqueia nada nesta etapa.
+- **Ausência de qualquer linha `Hibernate: create table transaction_entity (...)`** no trecho de log capturado, apesar de `spring.jpa.show-sql=true` (Passo 3) estar configurado — **ponto de atenção para verificação futura, não necessariamente um erro**: como o volume `transaction_data` (Passo 1) persiste os dados **entre reinicializações do container**, é plausível que esta não tenha sido a primeríssima subida da aplicação contra este volume específico, e que o Hibernate, com `ddl-auto=update`, tenha simplesmente constatado que a tabela já existia e estava com a estrutura correta, sem precisar (re)emitir o `CREATE TABLE`. A conferência do Passo 3, abaixo, confirma de forma independente que a tabela existe e está com a estrutura certa — o que já é suficiente para fechar o checkpoint —, mas vale, numa próxima execução com o volume recriado do zero (`docker compose down -v`, por exemplo), confirmar visualmente a linha `Hibernate: create table` para fechar esse ponto com certeza absoluta.
+
+**Passo 3 — Inspeção direta da tabela (`docker exec`):**
+
+```bash
+docker exec -it $(docker ps -qf "name=database") mysql -uapp -papp transaction -e "DESCRIBE transaction_entity;"
+```
+
+```
++-------------+-----------------------------------+------+-----+---------+-------+
+| Field       | Type                              | Null | Key | Default | Extra |
++-------------+-----------------------------------+------+-----+---------+-------+
+| id          | binary(16)                        | NO   | PRI | NULL    |       |
+| amount      | double                             | NO   |     | NULL    |       |
+| category    | enum('AUTO','GROCERIES','PHARMA') | YES  |     | NULL    |       |
+| description | varchar(255)                      | YES  |     | NULL    |       |
++-------------+-----------------------------------+------+-----+---------+-------+
+```
+
+**Análise do resultado:**
+
+- **As quatro colunas esperadas pela seção 9.9 do tutorial (`id`, `amount`, `category`, `description`) estão presentes**, confirmando que `TransactionEntity` (Passo 5) foi mapeada corretamente para a tabela `transaction_entity`.
+- **`id binary(16)`, chave primária (`PRI`)** — coerente com o `TransactionId` (Parte 8.2), um `record` envolvendo um `UUID`: um `UUID` java ocupa exatamente `16` bytes, e o driver/Hibernate mapeou o tipo para `binary(16)` — o tamanho mínimo e exato necessário, sem desperdício.
+- **`amount double`** — coerente com o campo `amount` de `Transaction` (Parte 8.4), do tipo primitivo Java `double`: o dialeto `MySQLDialect` mapeou-o para o tipo `DOUBLE` nativo do MySQL, sem qualquer anotação adicional de precisão ter sido necessária.
+- **`category enum('AUTO','GROCERIES','PHARMA')`** — confirma que `@Enumerated(EnumType.STRING)` (Passo 5) funcionou como projetado: o MySQL guarda um `ENUM` nativo com os três valores literais de `Category` (Parte 8.3), e não a posição numérica frágil do `EnumType.ORDINAL` padrão.
+- **`description varchar(255)`** — mapeamento padrão do Hibernate para `String`, sem anotação de tamanho customizado — `255` é o tamanho-padrão assumido quando nenhum `@Column(length = ...)` é especificado.
+- **`Null: YES` em `category` e `description`, mas `NO` em `id` e `amount`** — reflete a ausência, em `TransactionEntity`, de qualquer anotação de obrigatoriedade (`@Column(nullable = false)`, `@NotNull`, etc.) além do que decorre naturalmente dos tipos primitivos Java (`double` nunca é nulo; `id`, como chave primária, é `NOT NULL` por definição do próprio MySQL) — um ponto de atenção honesto, já antecipado implicitamente pelo tutorial, mas não corrigido nesta Parte (poderia ser tratado em uma iteração futura, adicionando `nullable = false` em `category` e `description`).
+- **Aviso `mysql: [Warning] Using a password on the command line interface can be insecure.`** — aviso padrão e esperado do próprio cliente `mysql` sempre que a senha é passada via `-p<senha>` diretamente na linha de comando (como o tutorial instrui, por simplicidade, na seção 9.9); não é um erro, apenas uma boa prática de segurança normalmente reservada para ambientes de produção (usar `-p` sem senha, sendo solicitado interativamente, ou variáveis de ambiente/arquivos de configuração) — sem impacto para fins de verificação local deste checkpoint.
+- **Tabela vazia** (nenhuma linha de dado retornada pelo `DESCRIBE`, o que é esperado — `DESCRIBE` mostra apenas a estrutura, não o conteúdo) — coerente com o que o tutorial já antecipa: nenhuma transação foi persistida de fato ainda, já que isso só se torna testável de ponta a ponta a partir da Parte 10 (via HTTP) ou da Parte 11 (via voz).
+
+### 14.3. ✅ Checkpoint da Parte 9 — fechado
+
+| Item | Status |
+| --- | --- |
+| `compose.yml` — criado, serviço `database` (MySQL `9.6`), `healthcheck` configurado | ✅ |
+| `build.gradle` — três dependências novas (`spring-boot-docker-compose`, `spring-boot-starter-data-jpa`, `mysql-connector-j`) | ✅ |
+| `application.properties` — `ddl-auto=update` e `show-sql=true` adicionados | ✅ |
+| `TransactionEntity` — criada, `@Entity`/`@Id`/`@Enumerated(STRING)`, mappers `from`/`toDomain` | ✅ |
+| `TransactionEntityRepository` — criada, `CrudRepository` + *query method* `findAllByCategory` | ✅ |
+| `JpaTransactionRepository` — criada, `@Repository`, implementa `TransactionRepository` (contrato da Parte 8) | ✅ |
+| `BudgetingApplication` sobe com sucesso — Docker Compose ativa o MySQL, `healthcheck` respeitado, conexão JDBC estabelecida, `Started ... in 12.803 seconds`, sem `ERROR` | ✅ |
+| `docker info` — Docker Engine em execução, `1` container ativo (`budgeting-database-1`), coerente com o log de subida | ✅ |
+| `docker exec ... DESCRIBE transaction_entity` — tabela criada com as quatro colunas esperadas (`id`, `amount`, `category`, `description`), tipos coerentes com o domínio | ✅ |
+| Linha `Hibernate: create table ...` explicitamente observada no log desta execução | ⚠️ Não observada nesta captura de log — ver nota na seção 14.2; não bloqueia o checkpoint, já que a estrutura da tabela foi confirmada independentemente via `docker exec` |
+
+**Marca de confiança:** *(a preencher por Arthur, conforme critério definido em 17/08/2026 — ver nota no início deste documento)*
+
+**Próximo passo planejado:** Parte 10 do tutorial (Vídeo 10) — expor o domínio já persistido (Parte 8 + Parte 9) via uma API REST tradicional (criação e listagem de transações via HTTP/JSON), independente, por enquanto, de qualquer envolvimento da IA — antes de, na Parte 11, conectar o pipeline completo de voz-para-voz a este mesmo domínio.
+
+---
