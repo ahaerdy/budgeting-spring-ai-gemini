@@ -2584,101 +2584,24 @@ O domínio (Parte 8) e a persistência real (Parte 9) já existem e funcionam. F
 
 Dar aos casos de uso já implementados uma porta de entrada REST convencional, permitindo criar e consultar transações diretamente por JSON, sem passar pelo pipeline de IA.
 
-> **📁 Arquivos desta etapa:**
-> 1. **Criar** `application/ListTransactionsByCategoryUseCase.java` (seção 10.4) — ao lado de `PersistTransactionUseCase`, já existente desde a Parte 8.
-> 2. **Criar pacotes** `infrastructure/http/request/` e `infrastructure/http/response/` dentro de `infrastructure/http/` (novo).
-> 3. **Criar** `infrastructure/http/request/TransactionRequest.java` (seção 10.2) — depende de `PersistTransactionInput` e `Category`.
-> 4. **Criar** `infrastructure/http/response/TransactionResponse.java` (seção 10.2) — depende de `TransactionOutput`.
-> 5. **Criar** `infrastructure/http/TransactionController.java` (seções 10.1 e 10.5) — depende de todos os anteriores, mais os dois casos de uso.
-> 6. **Criar** `infrastructure/config/UseCaseConfig.java` (seção 10.6) — opcional na prática (seção 10.6 explica por que ela é redundante com o `@Service` já existente em `PersistTransactionUseCase`), mas incluído aqui para o projeto ficar fiel ao `.zip` final. Se preferir, pode pular este arquivo sem quebrar nada.
->
-> Nenhuma dependência nova no `build.gradle`.
+### Visão geral desta etapa — os 6 passos, em ordem
 
-### 10.1. `TransactionController`: criação de transações, explicado linha por linha
+| Passo | Ação | Arquivo/Local |
+|---|---|---|
+| 1 | Criar `ListTransactionsByCategoryUseCase` | `budgeting/src/main/java/dio/budgeting/application/ListTransactionsByCategoryUseCase.java` |
+| 2 | Criar os pacotes `infrastructure/http/request/` e `infrastructure/http/response/` | `budgeting/src/main/java/dio/budgeting/infrastructure/http/` |
+| 3 | Criar `TransactionRequest` | `infrastructure/http/request/TransactionRequest.java` |
+| 4 | Criar `TransactionResponse` | `infrastructure/http/response/TransactionResponse.java` |
+| 5 | Criar `TransactionController` (completo — criação e listagem) | `infrastructure/http/TransactionController.java` |
+| 6 | Criar `UseCaseConfig` (opcional — seção 10.6 explica por quê) | `infrastructure/config/UseCaseConfig.java` |
 
-```java
-package dio.budgeting.infrastructure.http;
+Repare que o **caso de uso de listagem** (Passo 1) é criado **antes** do controller (Passo 5) — diferente da ordem em que o vídeo do curso apresenta o assunto, mas mais coerente com a lógica de dependências já usada em todas as Partes anteriores: primeiro a peça da qual algo depende, depois quem a utiliza. Nenhuma dependência nova no `build.gradle`.
 
-import dio.budgeting.application.PersistTransactionUseCase;
-import dio.budgeting.infrastructure.http.request.TransactionRequest;
-import dio.budgeting.infrastructure.http.response.TransactionResponse;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.RestController;
+### 10.1. Passo 1 — Criar `ListTransactionsByCategoryUseCase`
 
-@RestController
-@RequestMapping("/transactions")
-public class TransactionController {
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/application/ListTransactionsByCategoryUseCase.java`
 
-    private final PersistTransactionUseCase persistTransactionUseCase;
-
-    public TransactionController(PersistTransactionUseCase persistTransactionUseCase) {
-        this.persistTransactionUseCase = persistTransactionUseCase;
-    }
-
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public TransactionResponse createTransaction(@RequestBody TransactionRequest request) {
-        var transactionOutput = persistTransactionUseCase.execute(request.toInput());
-        return TransactionResponse.from(transactionOutput);
-    }
-}
-```
-
-Repare que este controller vive em `infrastructure.http` — um pacote **novo**, diferente de onde os controllers de IA moram (`ChatModelController`, `ChatClientController`, `TranscriptionController`, `TextToSpeechController` ficam soltos diretamente em `dio.budgeting`, um pacote mais "raso"). Essa separação reflete diretamente a organização em camadas explicada na Parte 8.1: qualquer controller que expõe o domínio de forma **REST tradicional** fica isolado dentro de `infrastructure`, como uma das possíveis "formas de entrada" do sistema.
-
-- **`@RequestMapping("/transactions")`** — o prefixo de URL deste controller, notoriamente **sem** o `/api` usado pelos controllers de IA (Partes 3, 4, 6, 7) — mais um indício visual de que este é o caminho REST convencional, para o recurso "transações", tratado de forma independente da camada de IA.
-- **`@RequestBody TransactionRequest request`** — a anotação **`@RequestBody`** instrui o Spring a **desserializar** o corpo da requisição HTTP (esperado como JSON) diretamente em um objeto Java, aqui `TransactionRequest` (explicado na próxima seção). Esse processo de conversão JSON → objeto Java (e vice-versa) é feito automaticamente pela biblioteca **Jackson**, incluída por padrão junto do `spring-boot-starter-web` (Parte 3.5).
-- **`request.toInput()`** — converte o DTO de entrada específico da camada HTTP (`TransactionRequest`) para o DTO de entrada esperado pelo caso de uso (`PersistTransactionInput`, Parte 8.8) — mantendo os dois DTOs **desacoplados**: uma mudança futura no formato do request JSON não obrigaria a alterar o caso de uso, e vice-versa.
-- **`@ResponseStatus(HttpStatus.CREATED)`** — como este endpoint específico **cria** um novo recurso (uma nova transação), ele retorna o código HTTP **`201 Created`** — em vez do `200 OK` padrão que o Spring usaria automaticamente — seguindo a convenção REST de sinalizar explicitamente, através do código de status, que uma operação de criação foi bem-sucedida.
-- **`TransactionResponse.from(transactionOutput)`** — converte a saída do caso de uso (`TransactionOutput`, Parte 8.8) para o DTO de resposta específico da camada HTTP (`TransactionResponse`), pela mesma razão de desacoplamento já explicada.
-
-### 10.2. `TransactionRequest` e `TransactionResponse`: DTOs da camada HTTP, explicados do zero
-
-```java
-package dio.budgeting.infrastructure.http.request;
-
-import dio.budgeting.application.input.PersistTransactionInput;
-import dio.budgeting.domain.Category;
-
-public record TransactionRequest(String description, Category category, double amount) {
-    public PersistTransactionInput toInput() {
-        return new PersistTransactionInput(description, Math.round(amount * 100), category);
-    }
-}
-```
-
-```java
-package dio.budgeting.infrastructure.http.response;
-import dio.budgeting.application.output.TransactionOutput;
-
-public record TransactionResponse(String id, String category, String description, double amount) {
-    public static TransactionResponse from(TransactionOutput output) {
-        return new TransactionResponse(output.id(), output.category(), output.description(), output.value());
-    }
-}
-```
-
-- **`TransactionRequest(String description, Category category, double amount)`** — repare, com atenção, que aqui `amount` é do tipo **`double`** — o valor **em reais**, exatamente como uma pessoa integrando com esta API via JSON esperaria escrever naturalmente (por exemplo, `125.33`). Isso é diferente da unidade usada internamente por `PersistTransactionInput` (centavos, `long` — Parte 8.8) — e é exatamente essa diferença de unidade que o método `toInput()` reconcilia.
-- **`Math.round(amount * 100)`** — dentro de `toInput()`, esta é a conversão de reais (a unidade "amigável" da API REST) para **centavos** (a unidade interna esperada por `PersistTransactionInput`): multiplica-se por `100`, e o resultado é arredondado para o **inteiro mais próximo**.
-
-  > **Por que `Math.round`, em vez de simplesmente truncar ou fazer a conversão direta?** `Math.round(double)` devolve um `long`, arredondando para o inteiro mais próximo — necessário aqui porque a multiplicação `amount * 100` (uma operação em `double`) pode, por imprecisão inerente ao ponto flutuante (o mesmo fenômeno já discutido na Parte 8.4), resultar em um valor como `12532.999999999998` em vez de exatamente `12533.0`, mesmo partindo de um valor de entrada "redondo" como `125.33`. Sem o arredondamento explícito, uma conversão ingênua desse valor para `long` (que simplesmente **trunca** a parte decimal, descartando-a) resultaria incorretamente em `12532`, um erro de um centavo — pequeno, mas inaceitável em um sistema que lida com dinheiro. `Math.round` corrige exatamente esse tipo de imprecisão.
-- **Records como DTOs, revisitando o conceito.** Tanto `TransactionRequest` quanto `TransactionResponse` são `record`s (conceito completo na Parte 8.2) — a escolha natural para objetos de transferência de dados imutáveis: eles não carregam nenhuma lógica de negócio própria, apenas valores (e, no caso de `TransactionRequest`, um pequeno método auxiliar de conversão, `toInput()`, que não é "regra de negócio" propriamente dita, mas apenas adaptação de formato entre camadas).
-
-### 10.3. Um bug encontrado (e corrigido depois): a conversão de centavos, contado com transparência
-
-Ao testar manualmente este endpoint pela primeira vez — enviando uma transação com `amount: 125.33` — o valor retornado pela API aparecia **incorretamente** como `12533.0`, e não `125.33`, como seria de se esperar.
-
-**A causa:** em uma versão anterior deste fluxo de código (antes do ajuste final, já corrigido e documentado neste tutorial, nas seções 8.7 e 10.2), o valor era tratado, em algum ponto da cadeia entre o request HTTP e a persistência, como já estando na unidade errada, sem a devida conversão de volta.
-
-Este tipo de "bug encontrado ao testar manualmente" é **absolutamente normal** durante o desenvolvimento incremental de qualquer sistema — e é exatamente o motivo de sempre **testar cada endpoint assim que ele é implementado**, em vez de deixar toda a validação para o final do projeto, quando encontrar a causa exata de um problema como este, em meio a muito mais código já escrito, seria bem mais trabalhoso.
-
-A correção definitiva desse fluxo de conversão (reais ↔ centavos, sempre concentrada nas **bordas** de cada camada, nunca "no meio" do domínio) é exatamente o que está documentado, já funcionando corretamente, nas Partes 8.7 (`input.amount() / 100.0`, centavos → reais, ao persistir) e 10.2 (`Math.round(amount * 100)`, reais → centavos, ao receber via REST) deste tutorial.
-
-### 10.4. `ListTransactionsByCategoryUseCase`: o segundo caso de uso, explicado linha por linha
+**O que fazer:** crie este arquivo, no pacote `application` (ao lado de `PersistTransactionUseCase`, já existente desde a Parte 8), com este conteúdo:
 
 ```java
 package dio.budgeting.application;
@@ -2707,36 +2630,146 @@ public class ListTransactionsByCategoryUseCase {
 }
 ```
 
-Este caso de uso é estruturalmente **análogo** a `PersistTransactionUseCase` (Parte 8.7) — mesmo padrão de injeção do `TransactionRepository`, mesma anotação `@Tool` diretamente no método `execute` desde sua criação (reforçando, mais uma vez, que **todo** caso de uso relevante para a IA neste projeto já nasce, desde o início, também como uma *tool* de Tool Calling — não é um passo separado, adicionado depois). A única diferença notável de padrão: aqui, `@ToolParam` **está** presente, explicando o único parâmetro (`category`) — diferente da inconsistência pontual já observada em `PersistTransactionInput.category` (Parte 8.8, sem `@ToolParam`).
+**✅ Este é o arquivo completo.**
 
-- **`execute(...)` devolve `List<TransactionOutput>`** — diferente de `PersistTransactionUseCase.execute(...)`, que devolvia um único `TransactionOutput` (Parte 8.7), este método devolve uma **lista** — coerente com a natureza da operação: "listar" implica, naturalmente, em múltiplos resultados possíveis (incluindo, no caso extremo, nenhum resultado, se não houver transações naquela categoria).
+Este caso de uso é estruturalmente **análogo** a `PersistTransactionUseCase` (Parte 8.8) — mesmo padrão de injeção do `TransactionRepository`, mesma anotação `@Tool` diretamente no método `execute` desde sua criação (reforçando, mais uma vez, que **todo** caso de uso relevante para a IA neste projeto já nasce, desde o início, também como uma *tool* de Tool Calling — não é um passo separado, adicionado depois). A única diferença notável de padrão: aqui, `@ToolParam` **está** presente, explicando o único parâmetro (`category`) — diferente da inconsistência pontual já observada em `PersistTransactionInput.category` (Parte 8.7, sem `@ToolParam`).
+
+- **`execute(...)` devolve `List<TransactionOutput>`** — diferente de `PersistTransactionUseCase.execute(...)`, que devolvia um único `TransactionOutput` (Parte 8.8), este método devolve uma **lista** — coerente com a natureza da operação: "listar" implica, naturalmente, em múltiplos resultados possíveis (incluindo, no caso extremo, nenhum resultado, se não houver transações naquela categoria).
 - **`transactionRepository.findAllByCategory(category).stream().map(TransactionOutput::from).toList()`** — a mesma sequência de `.stream().map(...).toList()` já vista em detalhe na Parte 9.7, agora aplicando o mapper `TransactionOutput::from` (referência a método, Parte 9.7) sobre cada `Transaction` encontrada, convertendo-a para o DTO de saída apropriado.
 
-### 10.5. Completando o `TransactionController`: o endpoint de listagem
+### 10.2. Passo 3 — Criar `TransactionRequest`
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/infrastructure/http/request/TransactionRequest.java`
+
+**O que fazer:** crie primeiro os pacotes `infrastructure/http/request/` e `infrastructure/http/response/` (Passo 2), depois este arquivo, dentro de `infrastructure/http/request/`:
 
 ```java
-private final PersistTransactionUseCase persistTransactionUseCase;
-private final ListTransactionsByCategoryUseCase listTransactionsByCategoryUseCase;
+package dio.budgeting.infrastructure.http.request;
 
-public TransactionController(PersistTransactionUseCase persistTransactionUseCase,
-                              ListTransactionsByCategoryUseCase listTransactionsByCategoryUseCase) {
-    this.persistTransactionUseCase = persistTransactionUseCase;
-    this.listTransactionsByCategoryUseCase = listTransactionsByCategoryUseCase;
-}
+import dio.budgeting.application.input.PersistTransactionInput;
+import dio.budgeting.domain.Category;
 
-@GetMapping("/{category}")
-public List<TransactionResponse> readTransactions(@PathVariable Category category) {
-    return listTransactionsByCategoryUseCase.execute(category).stream()
-            .map(TransactionResponse::from)
-            .toList();
+public record TransactionRequest(String description, Category category, double amount) {
+    public PersistTransactionInput toInput() {
+        return new PersistTransactionInput(description, Math.round(amount * 100), category);
+    }
 }
 ```
 
-- **Duas dependências agora injetadas no mesmo construtor** — o padrão de injeção por construtor (Parte 3.6) escala naturalmente para mais de uma dependência: basta adicionar mais um parâmetro à assinatura do construtor e atribuí-lo a um novo campo, sem nenhuma configuração adicional — o Spring resolve automaticamente **ambos** os *beans* necessários.
+**✅ Este é o arquivo completo.**
+
+- **`TransactionRequest(String description, Category category, double amount)`** — repare, com atenção, que aqui `amount` é do tipo **`double`** — o valor **em reais**, exatamente como uma pessoa integrando com esta API via JSON esperaria escrever naturalmente (por exemplo, `125.33`). Isso é diferente da unidade usada internamente por `PersistTransactionInput` (centavos, `long` — Parte 8.7) — e é exatamente essa diferença de unidade que o método `toInput()` reconcilia.
+- **`Math.round(amount * 100)`** — dentro de `toInput()`, esta é a conversão de reais (a unidade "amigável" da API REST) para **centavos** (a unidade interna esperada por `PersistTransactionInput`): multiplica-se por `100`, e o resultado é arredondado para o **inteiro mais próximo**.
+
+  > **Por que `Math.round`, em vez de simplesmente truncar ou fazer a conversão direta?** `Math.round(double)` devolve um `long`, arredondando para o inteiro mais próximo — necessário aqui porque a multiplicação `amount * 100` (uma operação em `double`) pode, por imprecisão inerente ao ponto flutuante (o mesmo fenômeno já discutido na Parte 8.5), resultar em um valor como `12532.999999999998` em vez de exatamente `12533.0`, mesmo partindo de um valor de entrada "redondo" como `125.33`. Sem o arredondamento explícito, uma conversão ingênua desse valor para `long` (que simplesmente **trunca** a parte decimal, descartando-a) resultaria incorretamente em `12532`, um erro de um centavo — pequeno, mas inaceitável em um sistema que lida com dinheiro. `Math.round` corrige exatamente esse tipo de imprecisão.
+- **Records como DTOs, revisitando o conceito.** `TransactionRequest` é um `record` (conceito completo na Parte 8.2) — a escolha natural para objetos de transferência de dados imutáveis: não carrega nenhuma lógica de negócio própria, apenas valores (e um pequeno método auxiliar de conversão, `toInput()`, que não é "regra de negócio" propriamente dita, mas apenas adaptação de formato entre camadas).
+
+### 10.3. Passo 4 — Criar `TransactionResponse`
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/infrastructure/http/response/TransactionResponse.java`
+
+**O que fazer:** crie este arquivo, dentro de `infrastructure/http/response/`:
+
+```java
+package dio.budgeting.infrastructure.http.response;
+import dio.budgeting.application.output.TransactionOutput;
+
+public record TransactionResponse(String id, String category, String description, double amount) {
+    public static TransactionResponse from(TransactionOutput output) {
+        return new TransactionResponse(output.id(), output.category(), output.description(), output.value());
+    }
+}
+```
+
+**✅ Este é o arquivo completo.**
+
+Assim como `TransactionRequest`, `TransactionResponse` também é um `record` — a mesma escolha de projeto, aqui para o sentido inverso: converter o DTO de saída do caso de uso (`TransactionOutput`, Parte 8.7) para o formato de resposta específico da camada HTTP, mantendo os dois DTOs **desacoplados** entre si — uma mudança futura no formato da resposta JSON não obrigaria a alterar o caso de uso, e vice-versa.
+
+### 10.4. Passo 5 — Criar `TransactionController`
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/infrastructure/http/TransactionController.java`
+
+**O que fazer:** crie este arquivo, diretamente em `infrastructure/http/` (não em `request/` nem `response/`), com este conteúdo completo — já incluindo os dois endpoints (criação e listagem), já que os dois casos de uso dos quais ele depende (`PersistTransactionUseCase`, desde a Parte 8; `ListTransactionsByCategoryUseCase`, Passo 1 desta Parte) já existem:
+
+```java
+package dio.budgeting.infrastructure.http;
+
+import dio.budgeting.application.ListTransactionsByCategoryUseCase;
+import dio.budgeting.application.PersistTransactionUseCase;
+import dio.budgeting.domain.Category;
+import dio.budgeting.infrastructure.http.request.TransactionRequest;
+import dio.budgeting.infrastructure.http.response.TransactionResponse;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/transactions")
+public class TransactionController {
+
+    private final PersistTransactionUseCase persistTransactionUseCase;
+    private final ListTransactionsByCategoryUseCase listTransactionsByCategoryUseCase;
+
+    public TransactionController(PersistTransactionUseCase persistTransactionUseCase,
+                                  ListTransactionsByCategoryUseCase listTransactionsByCategoryUseCase) {
+        this.persistTransactionUseCase = persistTransactionUseCase;
+        this.listTransactionsByCategoryUseCase = listTransactionsByCategoryUseCase;
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public TransactionResponse createTransaction(@RequestBody TransactionRequest request) {
+        var transactionOutput = persistTransactionUseCase.execute(request.toInput());
+        return TransactionResponse.from(transactionOutput);
+    }
+
+    @GetMapping("/{category}")
+    public List<TransactionResponse> readTransactions(@PathVariable Category category) {
+        return listTransactionsByCategoryUseCase.execute(category).stream()
+                .map(TransactionResponse::from)
+                .toList();
+    }
+}
+```
+
+**✅ Este é o arquivo completo.**
+
+Repare que este controller vive em `infrastructure.http` — um pacote **novo**, diferente de onde os controllers de IA moram (`ChatModelController`, `ChatClientController`, `TranscriptionController`, `TextToSpeechController` ficam soltos diretamente em `dio.budgeting`, um pacote mais "raso"). Essa separação reflete diretamente a organização em camadas explicada na Parte 8.1: qualquer controller que expõe o domínio de forma **REST tradicional** fica isolado dentro de `infrastructure`, como uma das possíveis "formas de entrada" do sistema.
+
+**O endpoint de criação:**
+- **`@RequestMapping("/transactions")`** — o prefixo de URL deste controller, notoriamente **sem** o `/api` usado pelos controllers de IA (Partes 3, 4, 6, 7) — mais um indício visual de que este é o caminho REST convencional, para o recurso "transações", tratado de forma independente da camada de IA.
+- **Duas dependências injetadas no mesmo construtor** — o padrão de injeção por construtor (Parte 3.6) escala naturalmente para mais de uma dependência: basta adicionar mais um parâmetro à assinatura do construtor e atribuí-lo a um novo campo, sem nenhuma configuração adicional — o Spring resolve automaticamente **ambos** os *beans* necessários.
+- **`@RequestBody TransactionRequest request`** — a anotação **`@RequestBody`** instrui o Spring a **desserializar** o corpo da requisição HTTP (esperado como JSON) diretamente em um objeto Java, aqui `TransactionRequest` (Passo 3). Esse processo de conversão JSON → objeto Java (e vice-versa) é feito automaticamente pela biblioteca **Jackson**, incluída por padrão junto do `spring-boot-starter-web` (Parte 3.5).
+- **`request.toInput()`** — converte o DTO de entrada específico da camada HTTP para o DTO de entrada esperado pelo caso de uso (`PersistTransactionInput`, Parte 8.7), mantendo os dois DTOs **desacoplados**.
+- **`@ResponseStatus(HttpStatus.CREATED)`** — como este endpoint específico **cria** um novo recurso (uma nova transação), ele retorna o código HTTP **`201 Created`** — em vez do `200 OK` padrão que o Spring usaria automaticamente — seguindo a convenção REST de sinalizar explicitamente, através do código de status, que uma operação de criação foi bem-sucedida.
+- **`TransactionResponse.from(transactionOutput)`** — converte a saída do caso de uso para o DTO de resposta específico da camada HTTP (Passo 4).
+
+**O endpoint de listagem:**
 - **`@GetMapping("/{category}")`** — repare na sintaxe `{category}`, com chaves — isso declara uma **variável de caminho** (*path variable*) dentro da própria URL, diferente do parâmetro de *query string* (`?prompt=...`) usado nas Partes 3 e 4. Aqui, a requisição seria feita, por exemplo, para `GET /transactions/GROCERIES`, com o valor da categoria embutido diretamente no caminho da URL.
 - **`@PathVariable Category category`** — associa esse parâmetro ao valor capturado da variável de caminho `{category}`. O Spring converte **automaticamente** o texto recebido na URL para o `enum Category` correspondente (Parte 8.3) — e, crucialmente, se o texto não corresponder a **nenhum** valor válido daquele `enum` (por exemplo, `GET /transactions/BANANA`), o Spring já responde, sozinho, com um erro HTTP apropriado, sem que nenhuma linha de código de validação manual precise ser escrita para esse caso.
 
-### 10.6. `UseCaseConfig`: uma configuração explícita adicional — e uma observação honesta sobre redundância
+### Um bug encontrado (e corrigido antes): a conversão de centavos, contado com transparência
+
+Vale registrar um episódio real, ocorrido durante o desenvolvimento original deste projeto, mesmo já estando corrigido no código que você acabou de criar. Ao testar este endpoint pela primeira vez — enviando uma transação com `amount: 125.33` — o valor retornado pela API aparecia **incorretamente** como `12533.0`, e não `125.33`, como seria de se esperar.
+
+**A causa:** em uma versão anterior deste fluxo de código, o valor era tratado, em algum ponto da cadeia entre o request HTTP e a persistência, como já estando na unidade errada, sem a devida conversão de volta.
+
+Este tipo de "bug encontrado ao testar manualmente" é **absolutamente normal** durante o desenvolvimento incremental de qualquer sistema — e é exatamente o motivo de sempre **testar cada endpoint assim que ele é implementado**, em vez de deixar toda a validação para o final do projeto, quando encontrar a causa exata de um problema como este, em meio a muito mais código já escrito, seria bem mais trabalhoso.
+
+A correção definitiva desse fluxo de conversão (reais ↔ centavos, sempre concentrada nas **bordas** de cada camada, nunca "no meio" do domínio) é exatamente o que já está no código que você criou nos Passos 1 a 5: `input.amount() / 100.0` (Parte 8.8, centavos → reais, ao persistir) e `Math.round(amount * 100)` (seção 10.2, reais → centavos, ao receber via REST).
+
+### 10.5. Passo 6 — Criar `UseCaseConfig` (opcional)
+
+**📁 Arquivo (novo):** `budgeting/src/main/java/dio/budgeting/infrastructure/config/UseCaseConfig.java`
+
+**O que fazer:** crie primeiro o pacote `infrastructure/config/`, depois este arquivo, com este conteúdo:
 
 ```java
 package dio.budgeting.infrastructure.config;
@@ -2756,32 +2789,51 @@ public class UseCaseConfig {
 }
 ```
 
+**✅ Este é o arquivo completo — mas, como explicado a seguir, opcional na prática.**
+
 - **`@Configuration`** — a mesma anotação já vista de leve na Parte 4.1 (na explicação teórica sobre resolver o erro de bean do `ChatClient`): marca a classe como uma fonte adicional e explícita de definições de *beans* para o Spring — um lugar centralizado onde componentes podem ser construídos manualmente, complementando (ou, como veremos, às vezes duplicando) a auto-configuração e o `@ComponentScan` automático.
 - **`@Bean`** — aplicada sobre um **método** (e não sobre uma classe, como `@Service` ou `@RestController`), esta anotação, dentro de uma classe `@Configuration`, informa ao Spring que o valor devolvido por este método específico deve ser registrado como um *bean* gerenciado, disponível para injeção em qualquer outro ponto da aplicação que peça um objeto daquele tipo.
 - **`persistTransactionUseCase(TransactionRepository transactionRepository)`** — o **parâmetro** deste método (`TransactionRepository`) também é resolvido automaticamente pelo Spring, da mesma forma que qualquer parâmetro de construtor já visto — o Spring localiza o *bean* de `TransactionRepository` já disponível (a implementação `JpaTransactionRepository`, da Parte 9.7) e o passa aqui.
 
-> **Uma nota de leitura cuidadosa, honesta e didaticamente importante: esta classe é, na prática, redundante.** Como `PersistTransactionUseCase` **já é** anotada com `@Service` diretamente em sua própria declaração (Parte 8.7) — o que, sozinho, já registraria um *bean* dela automaticamente via `@ComponentScan` (Parte 1.3) — esta classe de configuração explícita acaba **duplicando** o mecanismo de registro do mesmo *bean*, por dois caminhos diferentes. Isso **não chega a causar um erro** de execução (o Spring só reclamaria de uma colisão real de *beans* se dois mecanismos tentassem registrar *beans* com nomes conflitantes de forma incompatível — o que não é exatamente o caso aqui, já que o método `@Bean` tem o mesmo nome do *bean* que já seria gerado por `@Service`, resultando, na prática, em apenas uma definição efetivamente prevalecendo), mas é um ponto interessante para observar durante os estudos: **nem sempre um projeto real chega absolutamente "enxuto" em cada etapa do seu desenvolvimento** — e saber identificar esse tipo de configuração redundante, sem se assustar com ela, é parte real de aprender a ler criticamente uma base de código já existente, inclusive a sua própria.
+> **Uma nota de leitura cuidadosa, honesta e didaticamente importante: esta classe é, na prática, redundante.** Como `PersistTransactionUseCase` **já é** anotada com `@Service` diretamente em sua própria declaração (Parte 8.8) — o que, sozinho, já registraria um *bean* dela automaticamente via `@ComponentScan` (Parte 1.3) — esta classe de configuração explícita acaba **duplicando** o mecanismo de registro do mesmo *bean*, por dois caminhos diferentes. Isso **não chega a causar um erro** de execução (o Spring só reclamaria de uma colisão real de *beans* se dois mecanismos tentassem registrar *beans* com nomes conflitantes de forma incompatível — o que não é exatamente o caso aqui, já que o método `@Bean` tem o mesmo nome do *bean* que já seria gerado por `@Service`, resultando, na prática, em apenas uma definição efetivamente prevalecendo), mas é um ponto interessante para observar durante os estudos: **nem sempre um projeto real chega absolutamente "enxuto" em cada etapa do seu desenvolvimento** — e saber identificar esse tipo de configuração redundante, sem se assustar com ela, é parte real de aprender a ler criticamente uma base de código já existente, inclusive a sua própria. **Você pode pular este arquivo sem quebrar nada** — incluído aqui apenas para o projeto ficar fiel ao `.zip` final do curso.
+
+### 10.6. Testando o checkpoint desta Parte
+
+Assim como nas Partes 8 e 9, não existe nenhum teste de integração automatizado aqui — a verificação é feita rodando a aplicação e testando os dois endpoints manualmente, em sequência, na ordem que confirma o ciclo completo (criar, depois listar):
+
+**1. Rode `BudgetingApplication`** e confirme, nos logs, que a aplicação sobe sem erros (Docker subindo o MySQL, como já visto na Parte 9).
+
+**2. Crie uma transação:**
+```bash
+curl -X POST "http://localhost:8080/transactions" \
+  -H "Content-Type: application/json" \
+  -d '{"description": "Compras do mês", "category": "GROCERIES", "amount": 125.33}'
+```
+Confirme que a resposta vem com código `201` e que o campo `"amount"` no JSON de resposta é `125.33` — **não** `12533.0` (o bug histórico descrito acima).
+
+**3. Liste as transações da categoria usada:**
+```bash
+curl -X GET "http://localhost:8080/transactions/GROCERIES"
+```
+Confirme que a transação criada no passo anterior aparece na lista devolvida, com os mesmos valores.
+
+**4. (Opcional) Confirme diretamente no banco**, usando a mesma técnica já vista na Parte 9.9:
+```bash
+docker exec -it $(docker ps -qf "name=database") mysql -uapp -papp transaction -e "SELECT * FROM transaction_entity;"
+```
+Deve mostrar a linha recém-criada, com a categoria salva como texto (`GROCERIES`, graças a `@Enumerated(EnumType.STRING)`, Parte 9.5), não como número.
 
 ### 10.7. Checkpoint da Parte 10
 
-Confirmado no `.zip`: `infrastructure/http/TransactionController.java`, `infrastructure/http/request/TransactionRequest.java`, `infrastructure/http/response/TransactionResponse.java`, `application/ListTransactionsByCategoryUseCase.java` e `infrastructure/config/UseCaseConfig.java` existem exatamente como descrito. O `TransactionController` expõe `POST /transactions` (criação) e `GET /transactions/{category}` (listagem).
+| Arquivo | Ação nesta Parte |
+|---|---|
+| `budgeting/src/main/java/dio/budgeting/application/ListTransactionsByCategoryUseCase.java` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/infrastructure/http/request/TransactionRequest.java` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/infrastructure/http/response/TransactionResponse.java` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/infrastructure/http/TransactionController.java` | **Criado** — `POST /transactions` e `GET /transactions/{category}` |
+| `budgeting/src/main/java/dio/budgeting/infrastructure/config/UseCaseConfig.java` | **Criado** (opcional) |
 
-**Testando manualmente:**
-
-```http
-POST http://localhost:8080/transactions
-Content-Type: application/json
-
-{
-  "description": "Compras do mês",
-  "category": "GROCERIES",
-  "amount": 125.33
-}
-```
-
-```http
-GET http://localhost:8080/transactions/GROCERIES
-```
+Confirmado no `.zip`: `infrastructure/http/TransactionController.java`, `infrastructure/http/request/TransactionRequest.java`, `infrastructure/http/response/TransactionResponse.java`, `application/ListTransactionsByCategoryUseCase.java` e `infrastructure/config/UseCaseConfig.java` existem exatamente como descrito.
 
 **Recapitulando:** o projeto agora tem uma API REST **completa e funcional**, independente de qualquer envolvimento da IA — é possível criar e consultar transações puramente por JSON. Falta apenas **uma última peça**: conectar o pipeline de voz (Partes 6 e 7) a estes mesmos casos de uso (Partes 8 e 10), fechando o ciclo completo de ponta a ponta. É isso que a Parte 11 — a mais longa e a que reúne tudo o que foi construído até aqui — faz.
 
@@ -2806,16 +2858,19 @@ Esta é a Parte que finalmente **conecta todas as peças** construídas até aqu
 
 > **Nota importante sobre uma divergência de organização entre o curso e o seu projeto real, explicada com cuidado.** O curso, seguindo a rota da OpenAI, implementa este fluxo final **dentro do próprio `TransactionController`** (o controller REST construído na Parte 10), adicionando um endpoint `/transactions/ai`. No projeto final que você efetivamente entregou (Gemini), a decisão foi **diferente**: o fluxo completo de voz-para-voz continua vivendo dentro do **`TranscriptionController`** — o mesmo controller que já hospedava a transcrição pura desde a Parte 6 — mantendo `TransactionController` (Parte 10) dedicado **exclusivamente** à API REST tradicional em JSON, e `TranscriptionController` dedicado a **tudo** que envolve áudio (transcrição pura, o fluxo completo de IA por voz, e até uma segunda rota de consulta de transações via `/api`). Esta é uma escolha de organização perfeitamente legítima — ambas cumprem exatamente o mesmo objetivo funcional — e é o motivo pelo qual, a partir daqui, o código apresentado usa nomes de endpoint e de classe diferentes dos mostrados na narrativa original do curso.
 
-> **📁 Arquivos desta etapa:**
-> 1. **Criar pacote** `src/main/resources/prompts/` e, dentro dele, **criar** `system-message.st` (seção 11.2) — texto puro, não é código Java.
-> 2. **Reabrir e editar** `src/main/java/dio/budgeting/TranscriptionController.java` — o arquivo já existia desde a Parte 6, com apenas o método `transcribe`. Agora ele ganha: os campos e o construtor completo (5 dependências), o método `readTransactions`, e o método `processAudio` (seção 11.3). Substitua o conteúdo inteiro do arquivo pelo código completo mostrado na seção 11.3, já que ele é cumulativo em relação ao que você escreveu na Parte 6.
-> 3. **Conferir** (sem precisar editar, se você seguiu a Parte 8 e 10 à risca) que `PersistTransactionUseCase` e `ListTransactionsByCategoryUseCase` já têm o atributo `name=` explícito em `@Tool` — seção 11.1 explica por que isso é obrigatório a partir de agora, já que as duas *tools* passam a ser registradas **juntas**, pela primeira vez, no mesmo `ChatClient`.
->
-> Nenhuma dependência nova no `build.gradle`. Depois do passo 2, o projeto está **funcionalmente completo** — este é o momento de testar o endpoint `POST /api/ai` de ponta a ponta (seção 11.5).
+### Visão geral desta etapa — os 3 passos, em ordem
+
+| Passo | Ação | Arquivo |
+|---|---|---|
+| 1 | Criar o pacote `prompts` e o arquivo `system-message.st` | `budgeting/src/main/resources/prompts/system-message.st` |
+| 2 | Substituir por completo `TranscriptionController.java` | `budgeting/src/main/java/dio/budgeting/TranscriptionController.java` |
+| 3 | Conferir (sem editar) os nomes das *tools* já registradas | `PersistTransactionUseCase.java` e `ListTransactionsByCategoryUseCase.java` |
+
+Nenhuma dependência nova no `build.gradle`. Depois do Passo 2, o projeto está **funcionalmente completo** — este é o momento de testar o endpoint `POST /api/ai` de ponta a ponta (seção 11.6).
 
 ### 11.1. Preparando as *tools*: por que nomes explícitos evitam uma colisão real
 
-Até a Parte 10, tanto `PersistTransactionUseCase.execute(...)` (Parte 8.7) quanto `ListTransactionsByCategoryUseCase.execute(...)` (Parte 10.4) já estavam anotados com `@Tool`. Existe um problema em potencial aqui, que vale entender com precisão: **os dois métodos têm o mesmo nome Java** — `execute` — só que declarados em classes diferentes.
+Até a Parte 10, tanto `PersistTransactionUseCase.execute(...)` (Parte 8.8) quanto `ListTransactionsByCategoryUseCase.execute(...)` (Parte 10.1) já estavam anotados com `@Tool`. Existe um problema em potencial aqui, que vale entender com precisão: **os dois métodos têm o mesmo nome Java** — `execute` — só que declarados em classes diferentes.
 
 ```java
 @Tool(name = "persistTransaction", description = "Persiste uma nova transação financeira")
@@ -2825,11 +2880,21 @@ public TransactionOutput execute(PersistTransactionInput input) { ... }
 public List<TransactionOutput> execute(@ToolParam(description = "Categoria de uma transação") Category category) { ... }
 ```
 
-Ao registrar **as duas classes** como *tools* disponíveis para o mesmo `ChatClient` (o que acontece nesta Parte 11), o Spring AI precisa de alguma forma de **diferenciá-las** de maneira inequívoca para o modelo — e é exatamente para isso que serve o atributo **`name`** de `@Tool`, já usado, desde o início, nas Partes 8.7 e 10.4.
+Ao registrar **as duas classes** como *tools* disponíveis para o mesmo `ChatClient` (o que acontece nesta Parte 11), o Spring AI precisa de alguma forma de **diferenciá-las** de maneira inequívoca para o modelo — e é exatamente para isso que serve o atributo **`name`** de `@Tool`, já usado, desde o início, nas Partes 8.8 e 10.1.
 
 **Sem esse `name` explícito**, o Spring AI usaria, por padrão, o próprio nome do método Java (`execute`) como o nome da ferramenta exposta ao modelo — para **ambas** as *tools* simultaneamente. Isso criaria uma **colisão de nomes**, impedindo o modelo de diferenciar, de forma confiável, qual das duas ferramentas ele de fato quer chamar em cada situação. Ao dar nomes de negócio explícitos e **únicos** (`persistTransaction`, `listTransactionsByCategory`), essa ambiguidade desaparece completamente — mesmo que os métodos Java por trás continuem, coincidentemente, chamando-se `execute` os dois.
 
-### 11.2. O prompt de sistema definitivo: `system-message.st`
+### 11.2. Passo 3 — Conferir os nomes já registrados (sem editar)
+
+**📁 Arquivos a conferir (sem editar, se você seguiu as Partes 8 e 10 à risca):** `PersistTransactionUseCase.java` e `ListTransactionsByCategoryUseCase.java`
+
+**O que fazer:** abra os dois arquivos e confirme que a anotação `@Tool` de cada um já tem o atributo `name=` explícito, exatamente como mostrado na seção 11.1 acima. Se você seguiu as Partes 8 e 10 exatamente como descrito, **nenhuma edição é necessária aqui** — este passo existe só para você confirmar, antes de seguir, que a pré-condição do restante desta Parte já está satisfeita.
+
+### 11.3. Passo 1 — Criar `system-message.st`
+
+**📁 Arquivo (novo):** `budgeting/src/main/resources/prompts/system-message.st`
+
+**O que fazer:** crie primeiro o pacote `prompts` dentro de `src/main/resources/`, depois este arquivo, com este conteúdo (texto puro, não é código Java):
 
 ```
 Você é um assistente financeiro.
@@ -2837,17 +2902,21 @@ Sua tarefa é extrair dados de transações e usar as ferramentas disponíveis p
 Ao registrar uma transação, escolha a categoria que melhor se adapta ao contexto.
 ```
 
+**✅ Este é o arquivo completo.**
+
 - **Onde este arquivo vive:** `src/main/resources/prompts/system-message.st` — dentro de `resources`, para que seja **empacotado no *classpath*** da aplicação (junto do `.jar` final) e possa ser carregado como um `Resource` (o mesmo conceito da Parte 6.1), independentemente de onde a aplicação for executada.
 - **A extensão `.st`** — faz referência ao **StringTemplate**, uma biblioteca/formato para templates de texto usada em outras partes do ecossistema Spring para prompts parametrizáveis (com marcadores de posição que poderiam ser substituídos dinamicamente por valores, em tempo de execução). Neste arquivo específico, o conteúdo é usado como **texto fixo**, sem nenhum marcador — mas a extensão `.st` já sinaliza a intenção de que, no futuro, este prompt **poderia** ser parametrizado (por exemplo, incluindo dinamicamente a lista completa de categorias válidas, em vez de o modelo precisar inferi-las apenas a partir do `enum`).
 - **O conteúdo do prompt, frase por frase:**
-  - *"Você é um assistente financeiro."* — define o **papel** (a *persona*) do assistente, o mesmo padrão já visto de forma bem mais simples na Parte 4.3 (`"Você é um matemático"`).
+  - *"Você é um assistente financeiro."* — define o **papel** (a *persona*) do assistente, o mesmo padrão já visto de forma bem mais simples na Parte 4.2 (`"Você é um matematico"`).
   - *"Sua tarefa é extrair dados de transações e usar as ferramentas disponíveis para manipular transações."* — instrui **explicitamente** o modelo a preferir o uso das *tools* registradas, em vez de apenas responder em texto livre — reforçando o comportamento de Tool Calling desejado.
   - *"Ao registrar uma transação, escolha a categoria que melhor se adapta ao contexto."* — uma orientação de negócio bastante específica: o usuário, na prática, **raramente** vai dizer explicitamente "categoria: PHARMA" — ele vai dizer algo natural como *"passei na farmácia rapidinho"*, cabendo ao **próprio modelo** inferir corretamente qual das três categorias disponíveis (Parte 8.3) melhor se encaixa nessa frase.
 - Comparado com o prompt de sistema mostrado na narrativa original do curso (mais extenso, cobrindo explicitamente mais casos e exemplos), o `system-message.st` final do seu projeto é mais **enxuto** — outro ponto de possível evolução futura, listado na seção de Próximos Passos.
 
-### 11.3. `TranscriptionController`: o estado final e completo, explicado por inteiro
+### 11.4. Passo 2 — Substituir `TranscriptionController` pela versão final
 
-Este é, sem dúvida, o arquivo mais denso de todo o projeto — porque ele acumula responsabilidades ao longo de dois vídeos diferentes (06 e 11). Vamos ver a classe inteira primeiro, e depois dissecar cada parte nova em relação ao que já conhecemos da Parte 6.
+**📁 Arquivo (editar — substituir todo o conteúdo):** `budgeting/src/main/java/dio/budgeting/TranscriptionController.java`
+
+**O que fazer:** este arquivo já existe desde a Parte 6, com apenas o método `transcribe`. **Substitua o conteúdo inteiro do arquivo** pelo código completo abaixo, já que ele é cumulativo em relação ao que você escreveu naquela Parte — ganhando agora os campos e o construtor completo (5 dependências), o método `readTransactions`, e o método `processAudio`:
 
 ```java
 package dio.budgeting;
@@ -2949,48 +3018,67 @@ public class TranscriptionController {
 }
 ```
 
+**✅ Depois desta edição, este é o arquivo completo e final.**
+
 Analisando, com calma, apenas as partes **novas** em relação ao que já havia sido construído na Parte 6 (o método `transcribe`, em si, é literalmente idêntico ao já explicado — não vamos repeti-lo):
 
-- **Cinco dependências injetadas de uma vez no construtor** — cada uma correspondendo a uma responsabilidade específica de um dos três endpoints desta classe: `GoogleGenAiChatModel` (para a transcrição multimodal, Parte 6.3), os dois casos de uso reais (`PersistTransactionUseCase`, `ListTransactionsByCategoryUseCase` — para expô-los como *tools* **e** para o endpoint de listagem direta), um `ChatClient.Builder` (mesmo mecanismo da Parte 4.2), e um `TextToSpeechService` (Parte 7.3).
-- **`@Value("classpath:/prompts/system-message.st") Resource systemPrompt`** — repare que esta é uma forma **diferente** de usar `@Value` em relação à que vimos no `TextToSpeechService` (Parte 7.3, onde `@Value("${...}")` injetava o **valor de uma propriedade**). Aqui, o prefixo especial **`classpath:`** (em vez de `${...}`) instrui o Spring a interpretar o texto como um **caminho de recurso**, e a injetar diretamente um `Resource` apontando para esse arquivo dentro do *classpath* — o padrão idiomático usado para carregar arquivos de texto/template como este prompt de sistema, em vez de uma propriedade simples de configuração.
+- **Cinco dependências injetadas de uma vez no construtor** — cada uma correspondendo a uma responsabilidade específica de um dos três endpoints desta classe: `GoogleGenAiChatModel` (para a transcrição multimodal, Parte 6.4), os dois casos de uso reais (`PersistTransactionUseCase`, `ListTransactionsByCategoryUseCase` — para expô-los como *tools* **e** para o endpoint de listagem direta), um `ChatClient.Builder` (mesmo mecanismo da Parte 4.3), e um `TextToSpeechService` (Parte 7.5).
+- **`@Value("classpath:/prompts/system-message.st") Resource systemPrompt`** — repare que esta é uma forma **diferente** de usar `@Value` em relação à que vimos no `TextToSpeechService` (Parte 7.5, onde `@Value("${...}")` injetava o **valor de uma propriedade**). Aqui, o prefixo especial **`classpath:`** (em vez de `${...}`) instrui o Spring a interpretar o texto como um **caminho de recurso**, e a injetar diretamente um `Resource` apontando para esse arquivo dentro do *classpath* — o padrão idiomático usado para carregar arquivos de texto/template como este prompt de sistema, em vez de uma propriedade simples de configuração.
 - **`systemPrompt.getContentAsString(StandardCharsets.UTF_8)`** — lê **todo** o conteúdo do `Resource` de uma vez, como uma única `String`, decodificada especificamente em **UTF-8**.
 
   > **O que é UTF-8, explicado do zero, e por que especificá-lo explicitamente aqui?** UTF-8 é um padrão de **codificação de caracteres** — a forma como um texto é convertido em uma sequência de bytes (e vice-versa) para ser armazenado ou transmitido. Ele é amplamente usado por ser compatível com ASCII (o padrão mais básico, cobrindo letras sem acento e símbolos comuns) e, ao mesmo tempo, suportar corretamente caracteres de praticamente qualquer idioma do mundo — incluindo acentuação e caracteres especiais do português, essenciais para o prompt de sistema (que contém "não", "está", "é", entre outros). Especificar explicitamente `StandardCharsets.UTF_8`, em vez de deixar o sistema usar uma codificação "padrão" (que pode variar dependendo do sistema operacional/configuração de quem roda o código), garante que o texto seja lido **corretamente**, com os acentos intactos, independentemente de onde a aplicação for executada.
 - **`.defaultTools(persistTransactionUseCase, listTransactionsByCategoryUseCase)`** — repare em uma diferença importante em relação ao exemplo apresentado na narrativa do curso original, que passa **classes** (`.defaultTools(PersistTransactionUseCase.class, ListTransactionsByCategoryUseCase.class)`). O código final do seu projeto passa, em vez disso, **instâncias já injetadas** dos dois casos de uso.
 
   > **Por que essa diferença importa de verdade, e não é só estilo?** Como os dois casos de uso são *beans* gerenciados pelo Spring (com suas próprias dependências já resolvidas — cada um deles, internamente, já tem seu `TransactionRepository` real injetado, apontando para o `JpaTransactionRepository` da Parte 9.7), registrar a **instância gerenciada** garante que a *tool* efetivamente chamada pelo modelo execute com o **mesmo objeto** já configurado e pronto pelo contexto do Spring — com seu repositório de verdade conectado ao banco. Registrar apenas a **classe** exigiria que o próprio Spring AI soubesse instanciar `PersistTransactionUseCase` sozinho, do zero, sem saber de onde viria o `TransactionRepository` necessário — algo que, na prática, não funcionaria corretamente sem configuração adicional. Usar as instâncias já injetadas é, portanto, a forma correta e coerente com o resto da arquitetura do projeto.
-- **`throws IOException` na assinatura do construtor** — declarado porque `getContentAsString(...)` pode, em teoria, lançar essa exceção (a leitura de um arquivo, mesmo do *classpath*, é uma operação de entrada/saída, sujeita a falhas). Java exige que exceções **verificadas** (*checked exceptions*, como `IOException` — categorizadas assim porque o compilador **obriga** a tratá-las ou declará-las explicitamente, diferente de exceções "não verificadas" como `IllegalArgumentException`, já vista na Parte 7.3) sejam tratadas com um `try/catch`, ou explicitamente declaradas na assinatura do método com `throws`, repassando a responsabilidade de tratamento para quem chama esse método.
-- **`readTransactions(...)`** — o endpoint `GET /api/{category}`, **estruturalmente idêntico** ao `GET /transactions/{category}` do `TransactionController` (Parte 10.5), mas exposto sob o prefixo `/api` em vez de `/transactions` — uma **segunda porta de entrada**, funcionalmente equivalente, para a mesma consulta, agora vivendo ao lado dos endpoints de IA, em vez de junto dos endpoints REST tradicionais.
+- **`throws IOException` na assinatura do construtor** — declarado porque `getContentAsString(...)` pode, em teoria, lançar essa exceção (a leitura de um arquivo, mesmo do *classpath*, é uma operação de entrada/saída, sujeita a falhas). Java exige que exceções **verificadas** (*checked exceptions*, como `IOException` — categorizadas assim porque o compilador **obriga** a tratá-las ou declará-las explicitamente, diferente de exceções "não verificadas" como `IllegalArgumentException`, já vista na Parte 7.5) sejam tratadas com um `try/catch`, ou explicitamente declaradas na assinatura do método com `throws`, repassando a responsabilidade de tratamento para quem chama esse método.
+- **`readTransactions(...)`** — o endpoint `GET /api/{category}`, **estruturalmente idêntico** ao `GET /transactions/{category}` do `TransactionController` (Parte 10.4), mas exposto sob o prefixo `/api` em vez de `/transactions` — uma **segunda porta de entrada**, funcionalmente equivalente, para a mesma consulta, agora vivendo ao lado dos endpoints de IA, em vez de junto dos endpoints REST tradicionais.
 - **`processAudio(...)` — o endpoint `POST /api/ai`, o fluxo completo de ponta a ponta, passo a passo:**
-  1. **`var transcript = transcribe(file);`** — reaproveita, por chamada direta, o **mesmo método** `transcribe` já existente nesta própria classe (explicado por completo na Parte 6.3), convertendo o áudio recebido em texto.
+  1. **`var transcript = transcribe(file);`** — reaproveita, por chamada direta, o **mesmo método** `transcribe` já existente nesta própria classe (explicado por completo na Parte 6.4), convertendo o áudio recebido em texto.
   2. **`var answer = chatClient.prompt().user(transcript).call().content();`** — envia esse texto transcrito como mensagem de usuário ao `ChatClient` **já configurado** no construtor (com o prompt de sistema de `system-message.st` e as duas *tools* de negócio registradas). É exatamente **neste passo** que todo o mecanismo de Tool Calling, explicado com detalhe na Parte 5, entra em ação de verdade: o modelo decide, sozinho, com base na fala transcrita, se deve chamar `persistTransaction` (se a fala descreve um **novo** gasto a registrar) ou `listTransactionsByCategory` (se a fala pede, em vez disso, uma **consulta** de gastos já feitos), executa de fato a *tool* correspondente através do Spring AI, e formula uma **resposta textual final** (`answer`), já incorporando o resultado real dessa execução (o valor exato salvo, ou a lista real de transações encontradas).
   3. **`byte[] wavAudio = textToSpeechService.synthesize(answer);`** — converte essa resposta textual final de volta em áudio (todo o processo explicado em detalhe na Parte 7), fechando definitivamente o ciclo completo: **Áudio → Texto → Ação real → Texto → Áudio**.
-  4. A resposta HTTP final é montada exatamente da mesma forma já vista no `TextToSpeechController` (Parte 7.5): `ByteArrayResource`, cabeçalho `Content-Disposition: attachment`, nome de arquivo sugerido `audio.wav`.
+  4. A resposta HTTP final é montada exatamente da mesma forma já vista no `TextToSpeechController` (Parte 7.6): `ByteArrayResource`, cabeçalho `Content-Disposition: attachment`, nome de arquivo sugerido `audio.wav`.
 
-### 11.4. Verificando o fluxo com um breakpoint de depuração, passo a passo
+### 11.5. Verificando o fluxo com um breakpoint de depuração, passo a passo
 
-Uma forma particularmente eficaz de **confirmar visualmente** que o Tool Calling está de fato acontecendo (e não apenas confiar cegamente na resposta final devolvida) é colocar um **breakpoint** dentro do método `execute` de `PersistTransactionUseCase` (Parte 8.7) e rodar a aplicação em **modo debug** pela IDE.
+Uma forma particularmente eficaz de **confirmar visualmente** que o Tool Calling está de fato acontecendo (e não apenas confiar cegamente na resposta final devolvida) é colocar um **breakpoint** dentro do método `execute` de `PersistTransactionUseCase` (Parte 8.8) e rodar a aplicação em **modo debug** pela IDE.
 
 > **O que é um breakpoint, explicado do zero, para quem nunca depurou código dessa forma?** Um *breakpoint* ("ponto de interrupção") é um marcador que você posiciona em uma linha específica do código, através da sua IDE. Ao rodar a aplicação em **modo debug** (em vez do modo de execução normal), a execução do programa **pausa automaticamente**, exatamente naquela linha, sempre que ela é alcançada — permitindo que você **inspecione**, em tempo real, o valor de todas as variáveis disponíveis naquele ponto exato, antes de decidir continuar a execução (linha por linha, se desejar) ou deixá-la seguir normalmente até o próximo breakpoint.
 
 Ao enviar um áudio como *"Passei na farmácia rapidinho e deixei R$ 80 em três itens"* para `/api/ai`, a execução para exatamente nesse breakpoint, e o painel de variáveis da IDE permite inspecionar o objeto `input` (`PersistTransactionInput`) já **completamente preenchido pelo modelo** a partir da fala transcrita: uma **descrição** gerada automaticamente pela IA (por exemplo, *"Compra de três itens na farmácia"*), o **valor** já em centavos (`8000`, correspondente a R$ 80,00) e a **categoria** corretamente inferida (`PHARMA`) — tudo isso extraído puramente da linguagem natural falada, sem que o usuário tenha dito, em nenhum momento, algo tão explícito quanto "categoria PHARMA" ou "valor 8000".
 
-### 11.5. Testando manualmente o fluxo completo
+### 11.6. Testando o checkpoint desta Parte: o fluxo completo, via `curl`
 
-```http
-POST http://localhost:8080/api/ai
-Content-Type: multipart/form-data; boundary=boundary
+Não existe nenhum teste de integração automatizado para esta Parte (mesmo padrão já visto nas Partes 8, 9 e 10) — a verificação é toda manual, com a aplicação rodando. Siga os passos abaixo, em ordem:
 
---boundary
-Content-Disposition: form-data; name="file"; filename="recording-1.mp3"
+**1. Rode `BudgetingApplication`** e confirme, nos logs, que sobe sem erros (Docker, JPA, tudo já visto na Parte 9).
 
-< ./src/test/resources/audio/recording-1.mp3
---boundary
+**2. Teste o fluxo completo de voz para voz**, usando um dos áudios de teste já gravados na Parte 6:
+
+```bash
+curl -X POST "http://localhost:8080/api/ai" \
+  -F "file=@src/test/resources/audio/recording-1.mp3;type=audio/mpeg" \
+  --output resposta.wav
 ```
 
-A resposta é um arquivo `audio.wav`, que, ao ser reproduzido, deve confirmar **em voz** a transação registrada — algo como *"Registrei sua transação de R$ 80 para farmácia na categoria pharma."*. É possível conferir a persistência real diretamente, consultando a tabela `transaction_entity` no banco (via qualquer cliente MySQL, ou pelo painel de banco de dados integrado da própria IDE), confirmando que o registro foi de fato salvo com os valores corretamente extraídos.
+**3. Ouça `resposta.wav`** — deve confirmar, em voz, a transação registrada (algo como *"Registrei sua transação de 80 reais para farmácia na categoria pharma."*, dependendo de como o modelo formular a resposta a partir do resultado real da *tool*).
 
-### 11.6. Checkpoint da Parte 11 — estado final do projeto inteiro
+**4. Confirme a persistência real**, consultando a tabela diretamente (mesma técnica das Partes 9.9 e 10.6):
+```bash
+docker exec -it $(docker ps -qf "name=database") mysql -uapp -papp transaction -e "SELECT * FROM transaction_entity;"
+```
+A transação criada a partir do áudio deve aparecer na tabela, com os valores extraídos pela IA.
+
+**5. Teste também o fluxo de consulta por voz**, gravando (ou usando texto simulado, se preferir testar rápido via `/api/chat` primeiro) um áudio pedindo para **listar** gastos de uma categoria, em vez de registrar um novo — confirmando que o modelo consegue escolher corretamente entre as duas *tools* disponíveis, não só a de persistência.
+
+**6. Repita o passo 2 com o `curl` usado na Parte 6.7** (`POST /api/transcribe`, só a transcrição) e compare a transcrição isolada com o comportamento do fluxo completo — uma boa forma de confirmar que ambos os endpoints (`/api/transcribe` e `/api/ai`) continuam funcionando lado a lado, sem um interferir no outro.
+
+### 11.7. Checkpoint da Parte 11 — estado final do projeto inteiro
+
+| Arquivo | Ação nesta Parte |
+|---|---|
+| `budgeting/src/main/resources/prompts/system-message.st` | **Criado** |
+| `budgeting/src/main/java/dio/budgeting/TranscriptionController.java` | **Editado** — substituído por completo pela versão final (5 dependências, 3 endpoints) |
+| `PersistTransactionUseCase.java` / `ListTransactionsByCategoryUseCase.java` | Conferidos — `name=` já presente em `@Tool` desde as Partes 8 e 10 |
 
 Conferido diretamente contra `budgeting_ate_o_video11.zip`, este é o estado completo e final do código-fonte de todo o projeto:
 
