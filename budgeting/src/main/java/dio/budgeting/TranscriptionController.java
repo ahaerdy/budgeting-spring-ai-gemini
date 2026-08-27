@@ -1,17 +1,27 @@
 package dio.budgeting;
 
+import dio.budgeting.application.ListTransactionsByCategoryUseCase;
+import dio.budgeting.application.PersistTransactionUseCase;
+import dio.budgeting.domain.Category;
+import dio.budgeting.infrastructure.http.response.TransactionResponse;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.util.MimeTypeUtils;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @RestController
@@ -25,9 +35,25 @@ public class TranscriptionController {
             """;
 
     private final GoogleGenAiChatModel chatModel;
+    private final PersistTransactionUseCase persistTransactionUseCase;
+    private final ListTransactionsByCategoryUseCase listTransactionsByCategoryUseCase;
+    private final ChatClient chatClient;
+    private final TextToSpeechService textToSpeechService;
 
-    public TranscriptionController(GoogleGenAiChatModel chatModel) {
+    public TranscriptionController(GoogleGenAiChatModel chatModel,
+                                   PersistTransactionUseCase persistTransactionUseCase,
+                                   ListTransactionsByCategoryUseCase listTransactionsByCategoryUseCase,
+                                   ChatClient.Builder chatClientBuilder,
+                                   @Value("classpath:/prompts/system-message.st") Resource systemPrompt,
+                                   TextToSpeechService textToSpeechService) throws IOException {
         this.chatModel = chatModel;
+        this.persistTransactionUseCase = persistTransactionUseCase;
+        this.listTransactionsByCategoryUseCase = listTransactionsByCategoryUseCase;
+        this.chatClient = chatClientBuilder
+                .defaultSystem(systemPrompt.getContentAsString(StandardCharsets.UTF_8))
+                .defaultTools(persistTransactionUseCase, listTransactionsByCategoryUseCase)
+                .build();
+        this.textToSpeechService = textToSpeechService;
     }
 
     @PostMapping(value = "/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -44,6 +70,28 @@ public class TranscriptionController {
                 .build();
 
         return chatModel.call(prompt).getResult().getOutput().getText();
+    }
+
+    @GetMapping("/{category}")
+    public List<TransactionResponse> readTransactions(@PathVariable Category category) {
+        return listTransactionsByCategoryUseCase.execute(category).stream().map(TransactionResponse::from).toList();
+    }
+
+    @PostMapping(value = "/ai", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = "audio/wav")
+    ResponseEntity<Resource> processAudio(@RequestParam("file") MultipartFile file) throws IOException {
+        var transcript = transcribe(file);
+        var answer = chatClient.prompt().user(transcript).call().content();
+
+        byte[] wavAudio = textToSpeechService.synthesize(answer);
+        var resource = new ByteArrayResource(wavAudio);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename("audio.wav")
+                                .build()
+                                .toString())
+                .body(resource);
     }
 
 }
