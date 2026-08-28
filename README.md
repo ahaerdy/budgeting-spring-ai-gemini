@@ -32,6 +32,8 @@ Pipeline:
   - [Configuração](#configuração)
   - [Testes](#testes)
   - [Limitações conhecidas e possíveis evoluções](#limitações-conhecidas-e-possíveis-evoluções)
+  - [Referências técnicas](#referências-técnicas)
+  - [Autor](#autor)
 
 ---
 
@@ -58,20 +60,20 @@ O domínio é propositalmente simples — controle de gastos por categoria —, 
 O domínio segue os princípios de **Domain-Driven Design** e **Clean Architecture**, em três camadas com dependência apontando sempre para dentro:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  infrastructure                                              │
-│  (HTTP, persistência JPA, configuração, SDKs externos)       │
-│                                                                │
-│   ┌───────────────────────────────────────────────────────┐  │
-│   │  application                                           │  │
-│   │  (casos de uso, DTOs de entrada/saída)                 │  │
-│   │                                                          │  │
-│   │   ┌───────────────────────────────────────────────┐    │  │
-│   │   │  domain                                        │    │  │
-│   │   │  (Transaction, Category, TransactionRepository) │    │  │
-│   │   └───────────────────────────────────────────────┘    │  │
-│   └───────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  infrastructure                                                 │
+│  (HTTP, persistência JPA, configuração, SDKs externos)          │
+│                                                                 │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  application                                            │   │
+│   │  (casos de uso, DTOs de entrada/saída)                  │   │
+│   │                                                         │   │
+│   │   ┌─────────────────────────────────────────────────┐   │   │
+│   │   │  domain                                         │   │   │
+│   │   │  (Transaction, Category, TransactionRepository) │   │   │
+│   │   └─────────────────────────────────────────────────┘   │   │
+│   └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 - **`domain`** não conhece Spring, JPA, HTTP ou o Gemini. Define apenas o modelo de negócio (`Transaction`, `Category`, `TransactionId`) e o **contrato** de persistência (`TransactionRepository`, uma interface).
@@ -307,3 +309,33 @@ Os casos de uso e a camada de persistência/HTTP (a partir da introdução de `T
 - Não existe um endpoint de consulta que liste **todas** as transações, independente de categoria — hoje, uma consulta genérica ("liste meus gastos") é resolvida pelo modelo chamando a *tool* de listagem uma vez por categoria conhecida.
 - `UseCaseConfig` registra `PersistTransactionUseCase` como *bean* explícito, redundante com sua própria anotação `@Service` — mantido por não causar conflito, mas candidato natural a remoção.
 - Ausência de testes de integração automatizados para a camada de persistência, os controllers REST e o fluxo completo de voz — hoje validados apenas manualmente.
+
+---
+
+## Referências técnicas
+
+- [Spring Boot — Documentação oficial](https://docs.spring.io/spring-boot/index.html)
+- [Spring AI — Documentação oficial](https://docs.spring.io/spring-ai/reference/index.html)
+- [Spring AI — Google GenAI Chat Integration](https://docs.spring.io/spring-ai/reference/api/chat/google-genai-chat.html)
+- [Spring AI — Tool Calling](https://docs.spring.io/spring-ai/reference/api/tools.html)
+- [Spring AI — Multimodalidade](https://docs.spring.io/spring-ai/reference/api/multimodality.html)
+- [Google Gemini API — Documentação oficial](https://ai.google.dev/gemini-api/docs)
+- [Google Gen AI SDK para Java](https://github.com/googleapis/java-genai)
+- [Google Gemini API — Speech Generation (Text-to-Speech)](https://ai.google.dev/gemini-api/docs/speech-generation)
+- [Spring Data JPA — Documentação oficial](https://docs.spring.io/spring-data/jpa/reference/index.html)
+- [Spring Boot — Docker Compose Support](https://docs.spring.io/spring-boot/reference/features/dev-services.html)
+- [MySQL 9.6 — Documentação oficial](https://dev.mysql.com/doc/refman/9.6/en/)
+- [Project Lombok](https://projectlombok.org/)
+- [JUnit 5 — Documentação oficial](https://junit.org/junit5/docs/current/user-guide/)
+- [AssertJ — Documentação oficial](https://assertj.github.io/doc/)
+- [Clean Architecture (Robert C. Martin)](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
+- [Domain-Driven Design Reference (Eric Evans)](https://www.domainlanguage.com/ddd/reference/)
+
+---
+
+## Autor
+
+**Arthur Haerdy Jr.**
+
+- LinkedIn: [linkedin.com/in/arthur-haerdy-jr](https://www.linkedin.com/in/arthur-haerdy-jr/)
+- GitHub: [github.com/ahaerdy](https://github.com/ahaerdy)
