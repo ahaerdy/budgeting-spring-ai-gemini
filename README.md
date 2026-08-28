@@ -1,4 +1,4 @@
-# budgeting-spring-ai-gemini
+# VoiceBudget - Assistente Financeiro por Voz com IA
 
 API inteligente em **Spring Boot + Spring AI** que transforma comandos de voz em transações financeiras, usando o **Google Gemini** (chat, tool calling, transcrição multimodal e síntese de voz via SDK nativo) e persistência real em **MySQL**.
 
@@ -14,7 +14,7 @@ Pipeline:
 
 ## Sumário
 
-- [budgeting-spring-ai-gemini](#budgeting-spring-ai-gemini)
+- [VoiceBudget - Assistente Financeiro por Voz com IA](#voicebudget---assistente-financeiro-por-voz-com-ia)
   - [Sumário](#sumário)
   - [Visão geral](#visão-geral)
   - [Arquitetura](#arquitetura)
